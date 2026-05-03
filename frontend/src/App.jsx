@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────────
 // Change this to your deployed backend URL in production
-const API_BASE = "import.meta.env.VITE_API_BASE;";
+const API_BASE = import.meta.env.VITE_API_BASE;
 const USER_ID  = "default"; // swap with real auth user ID later
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
