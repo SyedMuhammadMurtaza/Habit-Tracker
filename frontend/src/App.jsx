@@ -65,12 +65,19 @@ const api = {
 };
 
 const iStyle = { flex: 1, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, padding: "8px 12px", color: "#fff", fontSize: 13 };
+const editInputStyle = { flex: 1, background: "#1a1a1a", border: "1px solid #22c55e", borderRadius: 6, padding: "4px 8px", color: "#fff", fontSize: 13, outline: "none" };
 
 function AddBtn({ onClick }) {
   return <button onClick={onClick} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#22c55e", color: "#000", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>+</button>;
 }
 function DelBtn({ onClick }) {
   return <button onClick={onClick} style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 14, padding: "0 4px", lineHeight: 1 }}>✕</button>;
+}
+function EditBtn({ onClick, active }) {
+  return <button onClick={onClick} style={{ background: "none", border: "none", color: active ? "#22c55e" : "#4b5563", cursor: "pointer", fontSize: 13, padding: "0 4px", lineHeight: 1 }}>✎</button>;
+}
+function SaveEditBtn({ onClick }) {
+  return <button onClick={onClick} style={{ background: "#22c55e", border: "none", borderRadius: 6, color: "#000", cursor: "pointer", fontSize: 11, padding: "3px 8px", fontWeight: 700, fontFamily: "'Space Mono',monospace" }}>OK</button>;
 }
 function Card({ children, style }) {
   return <div style={{ background: "#111", border: "1px solid #1f1f1f", borderRadius: 12, padding: 16, ...style }}>{children}</div>;
@@ -206,11 +213,19 @@ function HabitChart({ habitData, days, allHabits }) {
   );
 }
 
-// accent colors per group
-const GROUP_ACCENT = { morning: "#f59e0b", evening: "#a78bfa", night: "#6366f1" };
+const GROUP_ACCENT = { morning: "#f59e0b", evening: "#a78bfa", night: "#aeb0ff" };
 
-function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, today, days, toggleHabit, addHabit, deleteHabit, compact = false }) {
+function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, today, days, toggleHabit, addHabit, deleteHabit, editHabit, compact = false }) {
   const accent = GROUP_ACCENT[group] || "#22c55e";
+  const [editingHabit, setEditingHabit] = useState(null);
+  const [editVal, setEditVal] = useState("");
+
+  const startEdit = (habit) => { setEditingHabit(habit); setEditVal(habit); };
+  const confirmEdit = (oldHabit) => {
+    if (editVal.trim() && editVal.trim() !== oldHabit) editHabit(group, oldHabit, editVal.trim());
+    setEditingHabit(null);
+  };
+
   return (
     <div style={{ marginBottom: compact ? 12 : 0 }}>
       <div style={{ fontSize: 10, color: accent, fontFamily: "'Space Mono',monospace", letterSpacing: 1, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
@@ -218,11 +233,22 @@ function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, 
       </div>
       {habits.map((habit) => {
         const done = habitData[today]?.[habit];
+        const isEditing = editingHabit === habit;
         return (
           <div key={habit} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 12, padding: compact ? "6px 0" : "10px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
-            <input type="checkbox" checked={!!done} onChange={() => toggleHabit(today, habit)} style={{ accentColor: accent, cursor: "pointer", width: compact ? 14 : 16, height: compact ? 14 : 16 }} />
-            <span style={{ fontSize: compact ? 12 : 13, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: compact ? 80 : 120 }}>{habit}</span>
-            <HabitDotGrid habitData={habitData} habit={habit} days={days} onToggle={toggleHabit} />
+            <input type="checkbox" checked={!!done} onChange={() => toggleHabit(today, habit)} style={{ accentColor: accent, cursor: "pointer", width: compact ? 14 : 16, height: compact ? 14 : 16, flexShrink: 0 }} />
+            {isEditing ? (
+              <>
+                <input value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(habit); if (e.key === "Escape") setEditingHabit(null); }} style={{ ...editInputStyle, flex: 1, minWidth: 80 }} autoFocus />
+                <SaveEditBtn onClick={() => confirmEdit(habit)} />
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: compact ? 14 : 14, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: compact ? 80 : 120 }}>{habit}</span>
+                <HabitDotGrid habitData={habitData} habit={habit} days={days} onToggle={toggleHabit} />
+              </>
+            )}
+            <EditBtn onClick={() => isEditing ? setEditingHabit(null) : startEdit(habit)} active={isEditing} />
             <DelBtn onClick={() => deleteHabit(group, habit)} />
           </div>
         );
@@ -231,6 +257,51 @@ function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, 
         <input value={newVal} onChange={(e) => setNew(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { addHabit(group, newVal); setNew(""); } }} placeholder={`Add ${label.toLowerCase()} habit...`} style={{ ...iStyle, fontSize: 11 }} />
         <AddBtn onClick={() => { addHabit(group, newVal); setNew(""); }} />
       </div>
+    </div>
+  );
+}
+
+// ── Inline editable todo row ──────────────────────────────────────────────────
+function TodoRow({ t, onCheck, onDelete, onEdit, compact = false }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(t.text);
+  const confirm = () => { if (val.trim()) onEdit(t.id, val.trim()); setEditing(false); };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 10, padding: compact ? "7px 0" : "10px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
+      <input type="checkbox" checked={t.done} onChange={() => onCheck(t.id)} style={{ accentColor: "#22c55e", cursor: "pointer", width: compact ? 15 : 16, height: compact ? 15 : 16, flexShrink: 0 }} />
+      {editing ? (
+        <>
+          <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirm(); if (e.key === "Escape") setEditing(false); }} style={{ ...editInputStyle, flex: 1, minWidth: 80 }} autoFocus />
+          <SaveEditBtn onClick={confirm} />
+        </>
+      ) : (
+        <span style={{ flex: 1, fontSize: 14, color: t.done ? "#4b5563" : (compact ? "#d1d5db" : "#e5e7eb"), textDecoration: t.done ? "line-through" : "none", minWidth: compact ? 60 : 120 }}>{t.text}</span>
+      )}
+      {!editing && <TagSelector current={t.tag} onChange={(tag) => onEdit(t.id, t.text, tag)} />}
+      <EditBtn onClick={() => { setEditing(!editing); setVal(t.text); }} active={editing} />
+      <DelBtn onClick={() => onDelete(t.id)} />
+    </div>
+  );
+}
+
+// ── Inline editable priority row ─────────────────────────────────────────────
+function PriorityRow({ text, index, onDelete, onEdit }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(text);
+  const confirm = () => { if (val.trim()) onEdit(index, val.trim()); setEditing(false); };
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+      <span style={{ color: "#22c55e", fontSize: 12, fontFamily: "'Space Mono',monospace", flexShrink: 0 }}>{index + 1}.</span>
+      {editing ? (
+        <>
+          <input value={val} onChange={(e) => setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirm(); if (e.key === "Escape") setEditing(false); }} style={{ ...editInputStyle, flex: 1 }} autoFocus />
+          <SaveEditBtn onClick={confirm} />
+        </>
+      ) : (
+        <span style={{ flex: 1, fontSize: 14, color: "#d1d5db" }}>{text}</span>
+      )}
+      <EditBtn onClick={() => { setEditing(!editing); setVal(text); }} active={editing} />
+      <DelBtn onClick={() => onDelete(index)} />
     </div>
   );
 }
@@ -247,12 +318,12 @@ export default function SecondBrain() {
 
   const [todos,      setTodos]      = useState(INITIAL_TODOS);
   const [priorities, setPriorities] = useState(["Start on new business", "Post on social media", "Apply to new job"]);
-  const [newTodo,         setNewTodo]        = useState("");
-  const [newTodoTag,      setNewTodoTag]     = useState("Medium");
-  const [newPriority,     setNewPriority]    = useState("");
-  const [newMorningHabit, setNewMorningHabit] = useState("");
-  const [newEveningHabit, setNewEveningHabit] = useState("");
-  const [newNightHabit,   setNewNightHabit]   = useState("");
+  const [newTodo,         setNewTodo]         = useState("");
+  const [newTodoTag,      setNewTodoTag]       = useState("Medium");
+  const [newPriority,     setNewPriority]      = useState("");
+  const [newMorningHabit, setNewMorningHabit]  = useState("");
+  const [newEveningHabit, setNewEveningHabit]  = useState("");
+  const [newNightHabit,   setNewNightHabit]    = useState("");
 
   const days      = getLast10Days();
   const today     = days[days.length - 1];
@@ -318,6 +389,35 @@ export default function SecondBrain() {
     else setAndSaveNightHabits((h) => h.filter((x) => x !== habit));
   };
 
+  // ── Edit habit: rename key in habitData and update list ──────────────────
+  const editHabit = (group, oldName, newName) => {
+    if (!newName.trim() || newName === oldName) return;
+    // update habitData keys
+    const newHabitData = {};
+    days.forEach((d) => {
+      newHabitData[d] = { ...habitData[d] };
+      if (oldName in (newHabitData[d] || {})) {
+        newHabitData[d][newName] = newHabitData[d][oldName];
+        delete newHabitData[d][oldName];
+      }
+    });
+    setAndSaveHabitData(newHabitData);
+    const rename = (h) => h.map((x) => x === oldName ? newName : x);
+    if (group === "morning") setAndSaveMorningHabits(rename);
+    else if (group === "evening") setAndSaveEveningHabits(rename);
+    else setAndSaveNightHabits(rename);
+  };
+
+  // ── Edit todo ────────────────────────────────────────────────────────────
+  const editTodo = (id, text, tag) => {
+    setAndSaveTodos((prev) => prev.map((x) => x.id === id ? { ...x, text: text ?? x.text, tag: tag ?? x.tag } : x));
+  };
+
+  // ── Edit priority ────────────────────────────────────────────────────────
+  const editPriority = (index, newText) => {
+    setAndSavePriorities((prev) => prev.map((p, i) => i === index ? newText : p));
+  };
+
   const dayPct   = allHabits.length ? Math.round(allHabits.filter((h) => habitData[today]?.[h]).length / allHabits.length * 100) : 0;
   const weekPct  = Math.round(days.slice(-7).reduce((acc, d) => acc + (allHabits.length ? allHabits.filter((h) => habitData[d]?.[h]).length / allHabits.length : 0), 0) / 7 * 100);
   const monthPct = Math.round(days.reduce((acc, d) => acc + (allHabits.length ? allHabits.filter((h) => habitData[d]?.[h]).length / allHabits.length : 0), 0) / days.length * 100);
@@ -325,8 +425,10 @@ export default function SecondBrain() {
   const habitSections = [
     { label: "Morning", group: "morning", habits: morningHabits, newVal: newMorningHabit, setNew: setNewMorningHabit },
     { label: "Evening", group: "evening", habits: eveningHabits, newVal: newEveningHabit, setNew: setNewEveningHabit },
-    { label: "Night",   group: "night",   habits: nightHabits,   newVal: newNightHabit,   setNew: setNewNightHabit   },
+    { label: "Night", group: "night",   habits: nightHabits,   newVal: newNightHabit,   setNew: setNewNightHabit   },
   ];
+
+  const sharedHabitProps = { habitData, today, days, toggleHabit, addHabit, deleteHabit, editHabit };
 
   const NAV = [
     { id: "dashboard", icon: "⌂", label: "Dashboard" },
@@ -348,7 +450,7 @@ export default function SecondBrain() {
         .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
         .row2-grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:12px}
         .row1-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-        @media(max-width:700px){.row1-grid,.row2-grid,.grid-2{grid-template-columns:1fr!important}.header-title{font-size:14px!important}.nav-scroll{gap:4px!important}}
+        @media(max-width:700px){.row1-grid,.row2-grid,.grid-2{grid-template-columns:1fr!important}.header-title{font-size:12px!important}.nav-scroll{gap:4px!important}}
         @media(max-width:900px) and (min-width:701px){.row1-grid,.row2-grid{grid-template-columns:repeat(2,1fr)!important}}
       `}</style>
 
@@ -384,11 +486,12 @@ export default function SecondBrain() {
               <Card>
                 <ST t="Directory" />
                 {["Monthly", "2024 Weeks", "Habit Tracker", "Time Box"].map((item) => (
-                  <div key={item} onClick={() => item === "Habit Tracker" && setTab("habits")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #1a1a1a", cursor: "pointer", color: "#9ca3af", fontSize: 13 }}>
+                  <div key={item} onClick={() => item === "Habit Tracker" && setTab("habits")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #1a1a1a", cursor: "pointer", color: "#9ca3af", fontSize: 14 }}>
                     <span style={{ fontSize: 10, color: "#22c55e" }}>▶</span> {item}
                   </div>
                 ))}
               </Card>
+
               <Card>
                 <ST t="To-Do List" />
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -397,23 +500,20 @@ export default function SecondBrain() {
                   <AddBtn onClick={() => { if (newTodo.trim()) { setAndSaveTodos((p) => [...p, { id: Date.now(), text: newTodo.trim(), tag: newTodoTag, done: false }]); setNewTodo(""); } }} />
                 </div>
                 {todos.map((t) => (
-                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
-                    <input type="checkbox" checked={t.done} onChange={() => setAndSaveTodos((p) => p.map((x) => x.id === t.id ? { ...x, done: !x.done } : x))} style={{ accentColor: "#22c55e", cursor: "pointer", width: 15, height: 15, flexShrink: 0 }} />
-                    <span style={{ flex: 1, fontSize: 12, color: t.done ? "#4b5563" : "#d1d5db", textDecoration: t.done ? "line-through" : "none", minWidth: 60 }}>{t.text}</span>
-                    <TagSelector current={t.tag} onChange={(tag) => setAndSaveTodos((p) => p.map((x) => x.id === t.id ? { ...x, tag } : x))} />
-                    <DelBtn onClick={() => setAndSaveTodos((p) => p.filter((x) => x.id !== t.id))} />
-                  </div>
+                  <TodoRow key={t.id} t={t} compact
+                    onCheck={(id) => setAndSaveTodos((p) => p.map((x) => x.id === id ? { ...x, done: !x.done } : x))}
+                    onDelete={(id) => setAndSaveTodos((p) => p.filter((x) => x.id !== id))}
+                    onEdit={(id, text, tag) => editTodo(id, text, tag)} />
                 ))}
                 {todos.length === 0 && <div style={{ color: "#4b5563", fontSize: 12, textAlign: "center", padding: 12 }}>No tasks yet!</div>}
               </Card>
+
               <Card>
                 <ST t="Current Priorities" />
                 {priorities.map((p, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-                    <span style={{ color: "#22c55e", fontSize: 12, fontFamily: "'Space Mono',monospace", marginTop: 1 }}>{i + 1}.</span>
-                    <span style={{ flex: 1, fontSize: 13, color: "#d1d5db" }}>{p}</span>
-                    <DelBtn onClick={() => setAndSavePriorities((prev) => prev.filter((_, j) => j !== i))} />
-                  </div>
+                  <PriorityRow key={i} text={p} index={i}
+                    onDelete={(idx) => setAndSavePriorities((prev) => prev.filter((_, j) => j !== idx))}
+                    onEdit={editPriority} />
                 ))}
                 <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                   <input value={newPriority} onChange={(e) => setNewPriority(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newPriority.trim()) { setAndSavePriorities((prev) => [...prev, newPriority.trim()]); setNewPriority(""); } }} placeholder="Add priority..." style={iStyle} />
@@ -426,7 +526,7 @@ export default function SecondBrain() {
               <Card>
                 <ST t="Habits — Today" />
                 {habitSections.map(({ label, emoji, group, habits, newVal, setNew }) => (
-                  <HabitSection key={group} label={label} emoji={emoji} group={group} habits={habits} newVal={newVal} setNew={setNew} habitData={habitData} today={today} days={days} toggleHabit={toggleHabit} addHabit={addHabit} deleteHabit={deleteHabit} compact />
+                  <HabitSection key={group} label={label} emoji={emoji} group={group} habits={habits} newVal={newVal} setNew={setNew} {...sharedHabitProps} compact />
                 ))}
               </Card>
               <Pomodoro />
@@ -461,7 +561,7 @@ export default function SecondBrain() {
             {habitSections.map(({ label, emoji, group, habits, newVal, setNew }) => (
               <Card key={group}>
                 <ST t={`${emoji} ${label} Habits`} />
-                <HabitSection label={label} emoji={emoji} group={group} habits={habits} newVal={newVal} setNew={setNew} habitData={habitData} today={today} days={days} toggleHabit={toggleHabit} addHabit={addHabit} deleteHabit={deleteHabit} />
+                <HabitSection label={label} emoji={emoji} group={group} habits={habits} newVal={newVal} setNew={setNew} {...sharedHabitProps} />
               </Card>
             ))}
             <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
@@ -477,12 +577,10 @@ export default function SecondBrain() {
               <AddBtn onClick={() => { if (newTodo.trim()) { setAndSaveTodos((p) => [...p, { id: Date.now(), text: newTodo.trim(), tag: newTodoTag, done: false }]); setNewTodo(""); } }} />
             </div>
             {todos.map((t) => (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
-                <input type="checkbox" checked={t.done} onChange={() => setAndSaveTodos((p) => p.map((x) => x.id === t.id ? { ...x, done: !x.done } : x))} style={{ accentColor: "#22c55e", cursor: "pointer", width: 16, height: 16 }} />
-                <span style={{ flex: 1, fontSize: 13, color: t.done ? "#4b5563" : "#e5e7eb", textDecoration: t.done ? "line-through" : "none", minWidth: 120 }}>{t.text}</span>
-                <TagSelector current={t.tag} onChange={(tag) => setAndSaveTodos((p) => p.map((x) => x.id === t.id ? { ...x, tag } : x))} />
-                <DelBtn onClick={() => setAndSaveTodos((p) => p.filter((x) => x.id !== t.id))} />
-              </div>
+              <TodoRow key={t.id} t={t}
+                onCheck={(id) => setAndSaveTodos((p) => p.map((x) => x.id === id ? { ...x, done: !x.done } : x))}
+                onDelete={(id) => setAndSaveTodos((p) => p.filter((x) => x.id !== id))}
+                onEdit={(id, text, tag) => editTodo(id, text, tag)} />
             ))}
             {todos.length === 0 && <div style={{ color: "#4b5563", fontSize: 13, textAlign: "center", padding: 20 }}>No tasks yet. Add one above!</div>}
           </Card>
@@ -530,4 +628,4 @@ export default function SecondBrain() {
       </div>
     </div>
   );
-}
+} 
