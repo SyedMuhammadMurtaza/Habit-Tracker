@@ -26,6 +26,57 @@ const INITIAL_MORNING = ["Cold Shower", "Daily Journal", "Gym", "Yoga"];
 const INITIAL_EVENING = ["Read", "Study", "Wash Face"];
 const INITIAL_NIGHT   = ["Meditate", "Plan Tomorrow", "Sleep by 11pm"];
 
+// ── Day-of-week groups (Mon–Sat) ──────────────────────────────────────────
+const WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const WEEK_DAY_ACCENTS = {
+  Monday:    "#f59e0b",
+  Tuesday:   "#a78bfa",
+  Wednesday: "#22c55e",
+  Thursday:  "#fb923c",
+  Friday:    "#38bdf8",
+  Saturday:  "#f472b6",
+};
+
+const WEEK_DAY_EMOJI = {
+  Monday: "🌅", Tuesday: "💪", Wednesday: "🌿",
+  Thursday: "🔥", Friday: "✨", Saturday: "🎯",
+};
+
+// Default data per tab per day
+const DEFAULTS = {
+  workout: {
+    Monday:    ["Push-ups 3x15", "Pull-ups 3x8", "Bench Press"],
+    Tuesday:   ["Squats 4x10", "Lunges 3x12", "Leg Press"],
+    Wednesday: ["Rest / Stretch", "Foam Roll", "Walk 20min"],
+    Thursday:  ["Deadlift 3x5", "Rows 3x10", "Face Pulls"],
+    Friday:    ["Shoulders Press", "Lateral Raises", "Tricep Dips"],
+    Saturday:  ["Cardio 30min", "Core Circuit", "Stretching"],
+  },
+  skincare: {
+    Monday:    ["Cleanser", "Toner", "Moisturiser", "SPF"],
+    Tuesday:   ["Cleanser", "Vitamin C Serum", "Moisturiser", "SPF"],
+    Wednesday: ["Cleanser", "Exfoliate", "Hydrating Mask", "Moisturiser"],
+    Thursday:  ["Cleanser", "Niacinamide", "Moisturiser", "SPF"],
+    Friday:    ["Cleanser", "Retinol", "Moisturiser"],
+    Saturday:  ["Deep Cleanse", "Clay Mask", "Facial Oil", "Moisturiser"],
+  },
+  diet: {
+    Monday:    ["High Protein Breakfast", "No Sugar", "2L Water", "Vegetables"],
+    Tuesday:   ["Meal Prep Lunch", "No Processed Food", "2L Water"],
+    Wednesday: ["Intermittent Fast", "High Fibre Meal", "2L Water"],
+    Thursday:  ["High Protein Breakfast", "No Junk Food", "2L Water", "Fruits"],
+    Friday:    ["Cheat Meal (controlled)", "2L Water", "Vegetables"],
+    Saturday:  ["Meal Prep Sunday", "Healthy Snacks Only", "2L Water"],
+  },
+};
+
+const DEFAULT_PRIORITIES = {
+  workout:  ["Hit 10k steps daily", "Increase bench press weight", "Drink 3L water"],
+  skincare: ["Stay consistent with SPF", "Finish current Retinol bottle", "Drink more water for skin"],
+  diet:     ["Hit daily protein goal", "Cut out late night snacking", "Cook at home 5x a week"],
+};
+
 const buildInitialHabitData = (m, e, n) => {
   const allHabits = [...m, ...e, ...n];
   const days = getLast10Days();
@@ -33,6 +84,20 @@ const buildInitialHabitData = (m, e, n) => {
   days.forEach((day) => {
     data[day] = {};
     allHabits.forEach((h) => { data[day][h] = Math.random() > 0.35; });
+  });
+  const today = days[days.length - 1];
+  allHabits.forEach((h) => (data[today][h] = false));
+  return data;
+};
+
+// Build initial habit data for week-day grouped tabs
+const buildWeekHabitData = (habitsPerDay) => {
+  const allHabits = Object.values(habitsPerDay).flat();
+  const days = getLast10Days();
+  const data = {};
+  days.forEach((day) => {
+    data[day] = {};
+    allHabits.forEach((h) => { data[day][h] = Math.random() > 0.4; });
   });
   const today = days[days.length - 1];
   allHabits.forEach((h) => (data[today][h] = false));
@@ -191,7 +256,7 @@ function HabitDotGrid({ habitData, habit, days, onToggle }) {
   );
 }
 
-function HabitChart({ habitData, days, allHabits }) {
+function HabitChart({ habitData, days, allHabits, accentColor = "#22c55e" }) {
   const values = days.map((day) => { const d = habitData[day] || {}; const done = allHabits.filter((h) => d[h]).length; return allHabits.length ? Math.round((done / allHabits.length) * 100) : 0; });
   const W = 500, H = 140, PAD = { top: 16, right: 16, bottom: 24, left: 36 };
   const iW = W - PAD.left - PAD.right, iH = H - PAD.top - PAD.bottom;
@@ -200,23 +265,46 @@ function HabitChart({ habitData, days, allHabits }) {
   const areaD = `${pathD} L ${pts[pts.length - 1].x} ${PAD.top + iH} L ${pts[0].x} ${PAD.top + iH} Z`;
   return (
     <div style={{ background: "#0d0d0d", border: "1px solid #1f1f1f", borderRadius: 10, padding: 12 }}>
-      <div style={{ fontSize: 11, color: "#86efac", fontFamily: "'Space Mono',monospace", marginBottom: 8, opacity: 0.8 }}>HabitTracker — Last 10 Days</div>
+      <div style={{ fontSize: 11, color: accentColor, fontFamily: "'Space Mono',monospace", marginBottom: 8, opacity: 0.8 }}>Habit Tracker — Last 10 Days</div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
-        <defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22c55e" stopOpacity="0.5" /><stop offset="100%" stopColor="#22c55e" stopOpacity="0.02" /></linearGradient></defs>
+        <defs><linearGradient id={`cg-${accentColor.replace("#","")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={accentColor} stopOpacity="0.5" /><stop offset="100%" stopColor={accentColor} stopOpacity="0.02" /></linearGradient></defs>
         {[0, 25, 50, 75, 100].map((g) => { const y = PAD.top + iH - (g / 100) * iH; return (<g key={g}><line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#1f1f1f" strokeWidth="1" /><text x={PAD.left - 4} y={y + 4} textAnchor="end" fontSize="9" fill="#4b5563" fontFamily="Space Mono,monospace">{g}%</text></g>); })}
-        <path d={areaD} fill="url(#cg)" />
-        <path d={pathD} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" fill="#22c55e" stroke="#0d0d0d" strokeWidth="1.5" />)}
+        <path d={areaD} fill={`url(#cg-${accentColor.replace("#","")})`} />
+        <path d={pathD} fill="none" stroke={accentColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" fill={accentColor} stroke="#0d0d0d" strokeWidth="1.5" />)}
         {days.map((day, i) => <text key={i} x={pts[i].x} y={H - 4} textAnchor="middle" fontSize="9" fill="#4b5563" fontFamily="Space Mono,monospace">{getDayLabel(day)}</text>)}
       </svg>
     </div>
   );
 }
 
+function DailyBreakdown({ habitData, days, allHabits, today }) {
+  return (
+    <Card>
+      <ST t="Daily Breakdown" />
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
+        {days.map((day) => {
+          const done = allHabits.filter((h) => habitData[day]?.[h]).length;
+          const pct  = allHabits.length ? Math.round((done / allHabits.length) * 100) : 0;
+          const isToday = day === today;
+          return (
+            <div key={day} style={{ minWidth: 72, background: isToday ? "rgba(34,197,94,0.1)" : "#1a1a1a", border: `1px solid ${isToday ? "#22c55e" : "#2a2a2a"}`, borderRadius: 10, padding: "10px 8px", textAlign: "center", flexShrink: 0 }}>
+              <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 4, fontFamily: "'Space Mono',monospace" }}>{getMonthLabel(day)} {getDayLabel(day)}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 70 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444", fontFamily: "'Space Mono',monospace" }}>{pct}%</div>
+              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>{done}/{allHabits.length}</div>
+              {isToday && <div style={{ fontSize: 9, color: "#22c55e", marginTop: 4, fontWeight: 700 }}>TODAY</div>}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 const GROUP_ACCENT = { morning: "#f59e0b", evening: "#a78bfa", night: "#aeb0ff" };
 
-function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, today, days, toggleHabit, addHabit, deleteHabit, editHabit, compact = false }) {
-  const accent = GROUP_ACCENT[group] || "#22c55e";
+function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, today, days, toggleHabit, addHabit, deleteHabit, editHabit, compact = false, accentOverride }) {
+  const accent = accentOverride || GROUP_ACCENT[group] || "#22c55e";
   const [editingHabit, setEditingHabit] = useState(null);
   const [editVal, setEditVal] = useState("");
 
@@ -261,7 +349,6 @@ function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, 
   );
 }
 
-// ── Inline editable todo row ──────────────────────────────────────────────────
 function TodoRow({ t, onCheck, onDelete, onEdit, compact = false }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(t.text);
@@ -284,7 +371,6 @@ function TodoRow({ t, onCheck, onDelete, onEdit, compact = false }) {
   );
 }
 
-// ── Inline editable priority row ─────────────────────────────────────────────
 function PriorityRow({ text, index, onDelete, onEdit }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(text);
@@ -306,18 +392,143 @@ function PriorityRow({ text, index, onDelete, onEdit }) {
   );
 }
 
+// ── Week-day tab: Habit tracker + Priorities ──────────────────────────────
+function WeekDayTab({ tabKey, habitsPerDay, setHabitsPerDay, habitData, setHabitData, priorities, setPriorities, debouncedSave, accentColor }) {
+  const days      = getLast10Days();
+  const today     = days[days.length - 1];
+  const allHabits = Object.values(habitsPerDay).flat();
+
+  const [newInputs,   setNewInputs]   = useState(() => Object.fromEntries(WEEK_DAYS.map((d) => [d, ""])));
+  const [newPriority, setNewPriority] = useState("");
+
+  const dayPct   = allHabits.length ? Math.round(allHabits.filter((h) => habitData[today]?.[h]).length / allHabits.length * 100) : 0;
+  const weekPct  = Math.round(days.slice(-7).reduce((acc, d) => acc + (allHabits.length ? allHabits.filter((h) => habitData[d]?.[h]).length / allHabits.length : 0), 0) / 7 * 100);
+  const monthPct = Math.round(days.reduce((acc, d) => acc + (allHabits.length ? allHabits.filter((h) => habitData[d]?.[h]).length / allHabits.length : 0), 0) / days.length * 100);
+
+  const setAndSaveHabits = (val) => {
+    const next = typeof val === "function" ? val(habitsPerDay) : val;
+    setHabitsPerDay(next);
+    // flatten to per-day keys
+    const patch = {};
+    WEEK_DAYS.forEach((wd) => { patch[`${tabKey}${wd}`] = next[wd] || []; });
+    debouncedSave(patch);
+  };
+
+  const setAndSaveHabitData = (val) => {
+    const next = typeof val === "function" ? val(habitData) : val;
+    setHabitData(next);
+    debouncedSave({ [`${tabKey}HabitData`]: next });
+  };
+
+  const setAndSavePriorities = (val) => {
+    const next = typeof val === "function" ? val(priorities) : val;
+    setPriorities(next);
+    debouncedSave({ [`${tabKey}Priorities`]: next });
+  };
+
+  const toggleHabit = (day, habit) => {
+    setAndSaveHabitData((prev) => ({ ...prev, [day]: { ...prev[day], [habit]: !prev[day]?.[habit] } }));
+  };
+
+  const addHabit = (weekDay, name) => {
+    if (!name.trim()) return;
+    const n = name.trim();
+    const newHabitData = { ...habitData };
+    days.forEach((d) => { newHabitData[d] = { ...newHabitData[d], [n]: false }; });
+    setAndSaveHabitData(newHabitData);
+    setAndSaveHabits((prev) => ({ ...prev, [weekDay]: [...(prev[weekDay] || []), n] }));
+  };
+
+  const deleteHabit = (weekDay, habit) => {
+    setAndSaveHabits((prev) => ({ ...prev, [weekDay]: (prev[weekDay] || []).filter((x) => x !== habit) }));
+  };
+
+  const editHabit = (weekDay, oldName, newName) => {
+    if (!newName.trim() || newName === oldName) return;
+    const newHabitData = {};
+    days.forEach((d) => {
+      newHabitData[d] = { ...habitData[d] };
+      if (oldName in (newHabitData[d] || {})) {
+        newHabitData[d][newName] = newHabitData[d][oldName];
+        delete newHabitData[d][oldName];
+      }
+    });
+    setAndSaveHabitData(newHabitData);
+    setAndSaveHabits((prev) => ({ ...prev, [weekDay]: (prev[weekDay] || []).map((x) => x === oldName ? newName : x) }));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Progress bars */}
+      <Card>
+        <ST t="Progress" />
+        <ProgressBar label="Month"   value={monthPct} />
+        <ProgressBar label="Week"    value={weekPct} />
+        <ProgressBar label="Today"   value={dayPct} />
+      </Card>
+
+      {/* Main grid: 60% habits | 40% priorities */}
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12, alignItems: "start" }}>
+        {/* Habit tracker */}
+        <Card>
+          <ST t="Habit Tracker — Mon to Sat" />
+          {WEEK_DAYS.map((wd) => (
+            <HabitSection
+              key={wd}
+              label={wd}
+              emoji={WEEK_DAY_EMOJI[wd]}
+              habits={habitsPerDay[wd] || []}
+              group={wd}
+              newVal={newInputs[wd]}
+              setNew={(v) => setNewInputs((p) => ({ ...p, [wd]: v }))}
+              habitData={habitData}
+              today={today}
+              days={days}
+              toggleHabit={toggleHabit}
+              addHabit={addHabit}
+              deleteHabit={deleteHabit}
+              editHabit={editHabit}
+              compact
+              accentOverride={WEEK_DAY_ACCENTS[wd]}
+            />
+          ))}
+        </Card>
+
+        {/* Priorities */}
+        <Card>
+          <ST t="Current Priorities" />
+          {priorities.map((p, i) => (
+            <PriorityRow key={i} text={p} index={i}
+              onDelete={(idx) => setAndSavePriorities((prev) => prev.filter((_, j) => j !== idx))}
+              onEdit={(idx, newText) => setAndSavePriorities((prev) => prev.map((x, j) => j === idx ? newText : x))} />
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+            <input value={newPriority} onChange={(e) => setNewPriority(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newPriority.trim()) { setAndSavePriorities((prev) => [...prev, newPriority.trim()]); setNewPriority(""); } }} placeholder="Add priority..." style={iStyle} />
+            <AddBtn onClick={() => { if (newPriority.trim()) { setAndSavePriorities((prev) => [...prev, newPriority.trim()]); setNewPriority(""); } }} />
+          </div>
+        </Card>
+      </div>
+
+      {/* Chart + breakdown */}
+      <HabitChart habitData={habitData} days={days} allHabits={allHabits} accentColor={accentColor} />
+      <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} />
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────
 export default function SecondBrain() {
   const [tab, setTab]               = useState("dashboard");
   const [loading, setLoading]       = useState(true);
   const [saveStatus, setSaveStatus] = useState("idle");
 
+  // Dashboard state
   const [morningHabits, setMorningHabits] = useState(INITIAL_MORNING);
   const [eveningHabits, setEveningHabits] = useState(INITIAL_EVENING);
   const [nightHabits,   setNightHabits]   = useState(INITIAL_NIGHT);
-  const [habitData, setHabitData]         = useState({});
-
-  const [todos,      setTodos]      = useState(INITIAL_TODOS);
-  const [priorities, setPriorities] = useState(["Start on new business", "Post on social media", "Apply to new job"]);
+  const [habitData,     setHabitData]     = useState({});
+  const [todos,         setTodos]         = useState(INITIAL_TODOS);
+  const [priorities,    setPriorities]    = useState(["Start on new business", "Post on social media", "Apply to new job"]);
   const [newTodo,         setNewTodo]         = useState("");
   const [newTodoTag,      setNewTodoTag]       = useState("Medium");
   const [newPriority,     setNewPriority]      = useState("");
@@ -325,13 +536,30 @@ export default function SecondBrain() {
   const [newEveningHabit, setNewEveningHabit]  = useState("");
   const [newNightHabit,   setNewNightHabit]    = useState("");
 
-  const days      = getLast10Days();
-  const today     = days[days.length - 1];
+  // Workout tab state
+  const [workoutHabits,     setWorkoutHabits]     = useState(DEFAULTS.workout);
+  const [workoutHabitData,  setWorkoutHabitData]  = useState({});
+  const [workoutPriorities, setWorkoutPriorities] = useState(DEFAULT_PRIORITIES.workout);
+
+  // Skincare tab state
+  const [skincareHabits,     setSkincareHabits]     = useState(DEFAULTS.skincare);
+  const [skincareHabitData,  setSkincareHabitData]  = useState({});
+  const [skincarePriorities, setSkincarePriorities] = useState(DEFAULT_PRIORITIES.skincare);
+
+  // Diet tab state
+  const [dietHabits,     setDietHabits]     = useState(DEFAULTS.diet);
+  const [dietHabitData,  setDietHabitData]  = useState({});
+  const [dietPriorities, setDietPriorities] = useState(DEFAULT_PRIORITIES.diet);
+
+  const days  = getLast10Days();
+  const today = days[days.length - 1];
   const allHabits = [...morningHabits, ...eveningHabits, ...nightHabits];
 
+  // ── Load ────────────────────────────────────────────────────────────────
   useEffect(() => {
     api.load()
       .then((doc) => {
+        // Dashboard
         const m = doc.morningHabits || INITIAL_MORNING;
         const e = doc.eveningHabits || INITIAL_EVENING;
         const n = doc.nightHabits   || INITIAL_NIGHT;
@@ -343,11 +571,65 @@ export default function SecondBrain() {
         const merged = { ...saved };
         days.forEach((day) => { if (!merged[day]) merged[day] = {}; allH.forEach((h) => { if (merged[day][h] === undefined) merged[day][h] = false; }); });
         setHabitData(merged);
+
+        // Workout
+        const wHabits = {
+          Monday:    doc.workoutMonday    || DEFAULTS.workout.Monday,
+          Tuesday:   doc.workoutTuesday   || DEFAULTS.workout.Tuesday,
+          Wednesday: doc.workoutWednesday || DEFAULTS.workout.Wednesday,
+          Thursday:  doc.workoutThursday  || DEFAULTS.workout.Thursday,
+          Friday:    doc.workoutFriday    || DEFAULTS.workout.Friday,
+          Saturday:  doc.workoutSaturday  || DEFAULTS.workout.Saturday,
+        };
+        setWorkoutHabits(wHabits);
+        const wData = doc.workoutHabitData && Object.keys(doc.workoutHabitData).length
+          ? doc.workoutHabitData
+          : buildWeekHabitData(wHabits);
+        setWorkoutHabitData(wData);
+        setWorkoutPriorities(doc.workoutPriorities?.length ? doc.workoutPriorities : DEFAULT_PRIORITIES.workout);
+
+        // Skincare
+        const sHabits = {
+          Monday:    doc.skincareMonday    || DEFAULTS.skincare.Monday,
+          Tuesday:   doc.skincareTuesday   || DEFAULTS.skincare.Tuesday,
+          Wednesday: doc.skincareWednesday || DEFAULTS.skincare.Wednesday,
+          Thursday:  doc.skincareThursday  || DEFAULTS.skincare.Thursday,
+          Friday:    doc.skincareFriday    || DEFAULTS.skincare.Friday,
+          Saturday:  doc.skincareSaturday  || DEFAULTS.skincare.Saturday,
+        };
+        setSkincareHabits(sHabits);
+        const sData = doc.skincareHabitData && Object.keys(doc.skincareHabitData).length
+          ? doc.skincareHabitData
+          : buildWeekHabitData(sHabits);
+        setSkincareHabitData(sData);
+        setSkincarePriorities(doc.skincarePriorities?.length ? doc.skincarePriorities : DEFAULT_PRIORITIES.skincare);
+
+        // Diet
+        const dHabits = {
+          Monday:    doc.dietMonday    || DEFAULTS.diet.Monday,
+          Tuesday:   doc.dietTuesday   || DEFAULTS.diet.Tuesday,
+          Wednesday: doc.dietWednesday || DEFAULTS.diet.Wednesday,
+          Thursday:  doc.dietThursday  || DEFAULTS.diet.Thursday,
+          Friday:    doc.dietFriday    || DEFAULTS.diet.Friday,
+          Saturday:  doc.dietSaturday  || DEFAULTS.diet.Saturday,
+        };
+        setDietHabits(dHabits);
+        const dData = doc.dietHabitData && Object.keys(doc.dietHabitData).length
+          ? doc.dietHabitData
+          : buildWeekHabitData(dHabits);
+        setDietHabitData(dData);
+        setDietPriorities(doc.dietPriorities?.length ? doc.dietPriorities : DEFAULT_PRIORITIES.diet);
       })
-      .catch(() => { setHabitData(buildInitialHabitData(INITIAL_MORNING, INITIAL_EVENING, INITIAL_NIGHT)); })
+      .catch(() => {
+        setHabitData(buildInitialHabitData(INITIAL_MORNING, INITIAL_EVENING, INITIAL_NIGHT));
+        setWorkoutHabitData(buildWeekHabitData(DEFAULTS.workout));
+        setSkincareHabitData(buildWeekHabitData(DEFAULTS.skincare));
+        setDietHabitData(buildWeekHabitData(DEFAULTS.diet));
+      })
       .finally(() => setLoading(false));
   }, []);
 
+  // ── Debounced save ──────────────────────────────────────────────────────
   const debouncedSave = useCallback((() => {
     let timer;
     return (patch) => {
@@ -361,6 +643,7 @@ export default function SecondBrain() {
     };
   })(), []);
 
+  // ── Dashboard setters ───────────────────────────────────────────────────
   const setAndSaveMorningHabits = (val) => { const next = typeof val === "function" ? val(morningHabits) : val; setMorningHabits(next); debouncedSave({ morningHabits: next }); };
   const setAndSaveEveningHabits = (val) => { const next = typeof val === "function" ? val(eveningHabits) : val; setEveningHabits(next); debouncedSave({ eveningHabits: next }); };
   const setAndSaveNightHabits   = (val) => { const next = typeof val === "function" ? val(nightHabits)   : val; setNightHabits(next);   debouncedSave({ nightHabits: next }); };
@@ -389,10 +672,8 @@ export default function SecondBrain() {
     else setAndSaveNightHabits((h) => h.filter((x) => x !== habit));
   };
 
-  // ── Edit habit: rename key in habitData and update list ──────────────────
   const editHabit = (group, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
-    // update habitData keys
     const newHabitData = {};
     days.forEach((d) => {
       newHabitData[d] = { ...habitData[d] };
@@ -408,12 +689,10 @@ export default function SecondBrain() {
     else setAndSaveNightHabits(rename);
   };
 
-  // ── Edit todo ────────────────────────────────────────────────────────────
   const editTodo = (id, text, tag) => {
     setAndSaveTodos((prev) => prev.map((x) => x.id === id ? { ...x, text: text ?? x.text, tag: tag ?? x.tag } : x));
   };
 
-  // ── Edit priority ────────────────────────────────────────────────────────
   const editPriority = (index, newText) => {
     setAndSavePriorities((prev) => prev.map((p, i) => i === index ? newText : p));
   };
@@ -423,19 +702,22 @@ export default function SecondBrain() {
   const monthPct = Math.round(days.reduce((acc, d) => acc + (allHabits.length ? allHabits.filter((h) => habitData[d]?.[h]).length / allHabits.length : 0), 0) / days.length * 100);
 
   const habitSections = [
-    { label: "Morning", group: "morning", habits: morningHabits, newVal: newMorningHabit, setNew: setNewMorningHabit },
-    { label: "Evening", group: "evening", habits: eveningHabits, newVal: newEveningHabit, setNew: setNewEveningHabit },
-    { label: "Night", group: "night",   habits: nightHabits,   newVal: newNightHabit,   setNew: setNewNightHabit   },
+    { label: "Morning", emoji: "🌅", group: "morning", habits: morningHabits, newVal: newMorningHabit, setNew: setNewMorningHabit },
+    { label: "Evening", emoji: "🌆", group: "evening", habits: eveningHabits, newVal: newEveningHabit, setNew: setNewEveningHabit },
+    { label: "Night",   emoji: "🌙", group: "night",   habits: nightHabits,   newVal: newNightHabit,   setNew: setNewNightHabit   },
   ];
 
   const sharedHabitProps = { habitData, today, days, toggleHabit, addHabit, deleteHabit, editHabit };
 
   const NAV = [
-    { id: "dashboard", icon: "⌂", label: "Dashboard" },
-    { id: "habits",    icon: "✓", label: "Habits"    },
-    { id: "todos",     icon: "☑", label: "To-Do"     },
-    { id: "chart",     icon: "◈", label: "Progress"  },
-    { id: "pomodoro",  icon: "⏱", label: "Pomodoro"  },
+    { id: "dashboard", icon: "⌂",  label: "Dashboard" },
+    { id: "habits",    icon: "✓",  label: "Habits"    },
+    { id: "todos",     icon: "☑",  label: "To-Do"     },
+    { id: "chart",     icon: "◈",  label: "Progress"  },
+    { id: "pomodoro",  icon: "⏱",  label: "Pomodoro"  },
+    { id: "workout",   icon: "🏋️", label: "Workout"   },
+    { id: "skincare",  icon: "✨",  label: "Skin Care" },
+    { id: "diet",      icon: "🥗",  label: "Diet"      },
   ];
 
   if (loading) return <LoadingScreen />;
@@ -450,7 +732,7 @@ export default function SecondBrain() {
         .grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
         .row2-grid{display:grid;grid-template-columns:1fr 2fr 1fr;gap:12px}
         .row1-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-        @media(max-width:700px){.row1-grid,.row2-grid,.grid-2{grid-template-columns:1fr!important}.header-title{font-size:12px!important}.nav-scroll{gap:4px!important}}
+        @media(max-width:700px){.row1-grid,.row2-grid,.grid-2{grid-template-columns:1fr!important}.header-title{font-size:12px!important}.nav-scroll{gap:4px!important}.week-grid{grid-template-columns:1fr!important}}
         @media(max-width:900px) and (min-width:701px){.row1-grid,.row2-grid{grid-template-columns:repeat(2,1fr)!important}}
       `}</style>
 
@@ -474,6 +756,7 @@ export default function SecondBrain() {
 
       <div style={{ flex: 1, padding: "16px 24px", width: "100%", paddingBottom: 32 }}>
 
+        {/* ── Dashboard ── */}
         {tab === "dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="row1-grid">
@@ -534,28 +817,12 @@ export default function SecondBrain() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
-              <Card>
-                <ST t="Daily Breakdown" />
-                <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
-                  {days.map((day) => {
-                    const done = allHabits.filter((h) => habitData[day]?.[h]).length;
-                    const pct  = allHabits.length ? Math.round((done / allHabits.length) * 100) : 0;
-                    const isToday = day === today;
-                    return (
-                      <div key={day} style={{ minWidth: 72, background: isToday ? "rgba(34,197,94,0.1)" : "#1a1a1a", border: `1px solid ${isToday ? "#22c55e" : "#2a2a2a"}`, borderRadius: 10, padding: "10px 8px", textAlign: "center", flexShrink: 0 }}>
-                        <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 4, fontFamily: "'Space Mono',monospace" }}>{getMonthLabel(day)} {getDayLabel(day)}</div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 70 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444", fontFamily: "'Space Mono',monospace" }}>{pct}%</div>
-                        <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>{done}/{allHabits.length}</div>
-                        {isToday && <div style={{ fontSize: 9, color: "#22c55e", marginTop: 4, fontWeight: 700 }}>TODAY</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
+              <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} />
             </div>
           </div>
         )}
 
+        {/* ── Habits ── */}
         {tab === "habits" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {habitSections.map(({ label, emoji, group, habits, newVal, setNew }) => (
@@ -568,6 +835,7 @@ export default function SecondBrain() {
           </div>
         )}
 
+        {/* ── To-Do ── */}
         {tab === "todos" && (
           <Card>
             <ST t="To-Do List" />
@@ -586,30 +854,15 @@ export default function SecondBrain() {
           </Card>
         )}
 
+        {/* ── Progress ── */}
         {tab === "chart" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
-            <Card>
-              <ST t="Daily Breakdown" />
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
-                {days.map((day) => {
-                  const done = allHabits.filter((h) => habitData[day]?.[h]).length;
-                  const pct  = allHabits.length ? Math.round((done / allHabits.length) * 100) : 0;
-                  const isToday = day === today;
-                  return (
-                    <div key={day} style={{ minWidth: 72, background: isToday ? "rgba(34,197,94,0.1)" : "#1a1a1a", border: `1px solid ${isToday ? "#22c55e" : "#2a2a2a"}`, borderRadius: 10, padding: "10px 8px", textAlign: "center", flexShrink: 0 }}>
-                      <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 4, fontFamily: "'Space Mono',monospace" }}>{getMonthLabel(day)} {getDayLabel(day)}</div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 70 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444", fontFamily: "'Space Mono',monospace" }}>{pct}%</div>
-                      <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>{done}/{allHabits.length}</div>
-                      {isToday && <div style={{ fontSize: 9, color: "#22c55e", marginTop: 4, fontWeight: 700 }}>TODAY</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
+            <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} />
           </div>
         )}
 
+        {/* ── Pomodoro ── */}
         {tab === "pomodoro" && (
           <div style={{ maxWidth: 400, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
             <Pomodoro />
@@ -625,7 +878,52 @@ export default function SecondBrain() {
           </div>
         )}
 
+        {/* ── Workout ── */}
+        {tab === "workout" && (
+          <WeekDayTab
+            tabKey="workout"
+            habitsPerDay={workoutHabits}
+            setHabitsPerDay={setWorkoutHabits}
+            habitData={workoutHabitData}
+            setHabitData={setWorkoutHabitData}
+            priorities={workoutPriorities}
+            setPriorities={setWorkoutPriorities}
+            debouncedSave={debouncedSave}
+            accentColor="#fb923c"
+          />
+        )}
+
+        {/* ── Skin Care ── */}
+        {tab === "skincare" && (
+          <WeekDayTab
+            tabKey="skincare"
+            habitsPerDay={skincareHabits}
+            setHabitsPerDay={setSkincareHabits}
+            habitData={skincareHabitData}
+            setHabitData={setSkincareHabitData}
+            priorities={skincarePriorities}
+            setPriorities={setSkincarePriorities}
+            debouncedSave={debouncedSave}
+            accentColor="#f472b6"
+          />
+        )}
+
+        {/* ── Diet ── */}
+        {tab === "diet" && (
+          <WeekDayTab
+            tabKey="diet"
+            habitsPerDay={dietHabits}
+            setHabitsPerDay={setDietHabits}
+            habitData={dietHabitData}
+            setHabitData={setDietHabitData}
+            priorities={dietPriorities}
+            setPriorities={setDietPriorities}
+            debouncedSave={debouncedSave}
+            accentColor="#38bdf8"
+          />
+        )}
+
       </div>
     </div>
   );
-} 
+}
