@@ -265,9 +265,9 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
     setPriorities(docData[prioritiesKey]);
   }, [docData[habitsKey], docData[habitDataKey], docData[prioritiesKey]]);
 
-  const saveHabits     = (next) => { setHabits(next);     onSave({ [habitsKey]: next }); };
-  const saveHabitData  = (next) => { setHabitData(next);  onSave({ [habitDataKey]: next }); };
-  const savePriorities = (next) => { setPriorities(next); onSave({ [prioritiesKey]: next }); };
+  const saveHabits     = (next) => { setHabits(next);     habitsRef.current = next;    onSave({ [habitsKey]: next }); };
+  const saveHabitData  = (next) => { setHabitData(next);  habitDataRef.current = next; onSave({ [habitDataKey]: next }); };
+  const savePriorities = (next) => { setPriorities(next); prioritiesRef.current = next; onSave({ [prioritiesKey]: next }); };
 
   const toggleHabit = (day, habit) => {
     const next = { ...habitDataRef.current, [day]: { ...habitDataRef.current[day], [habit]: !habitDataRef.current[day]?.[habit] } };
@@ -279,8 +279,11 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
     const n = name.trim();
     const nd = { ...habitDataRef.current };
     days.forEach((d) => { nd[d] = { ...nd[d], [n]: false }; });
-    saveHabitData(nd);
-    saveHabits([...habitsRef.current, n]);
+    // save both in one patch so debounce doesn't lose either
+    const newHabits = [...habitsRef.current, n];
+    setHabits(newHabits);     habitsRef.current = newHabits;
+    setHabitData(nd);         habitDataRef.current = nd;
+    onSave({ [habitsKey]: newHabits, [habitDataKey]: nd });
   };
 
   const deleteHabit = (group, habit) => saveHabits(habitsRef.current.filter((x) => x !== habit));
@@ -292,8 +295,10 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
       nd[d] = { ...habitDataRef.current[d] };
       if (oldName in (nd[d] || {})) { nd[d][newName] = nd[d][oldName]; delete nd[d][oldName]; }
     });
-    saveHabitData(nd);
-    saveHabits(habitsRef.current.map((x) => x === oldName ? newName : x));
+    const newHabits = habitsRef.current.map((x) => x === oldName ? newName : x);
+    setHabits(newHabits);     habitsRef.current = newHabits;
+    setHabitData(nd);         habitDataRef.current = nd;
+    onSave({ [habitsKey]: newHabits, [habitDataKey]: nd });
   };
 
   const addPriority    = () => { if (!newPriority.trim()) return; savePriorities([...prioritiesRef.current, newPriority.trim()]); setNewPriority(""); };
@@ -404,12 +409,17 @@ export default function SecondBrain() {
   }, []);
 
   // ── Debounced save ────────────────────────────────────────────────────────
-  const timerRef = useRef(null);
+  const timerRef       = useRef(null);
+  const pendingPatch   = useRef({});
   const debouncedSave = useCallback((patch) => {
+    // accumulate all patches so rapid consecutive saves don't lose data
+    pendingPatch.current = { ...pendingPatch.current, ...patch };
     clearTimeout(timerRef.current);
     setSaveStatus("saving");
     timerRef.current = setTimeout(() => {
-      api.save(patch)
+      const toSave = { ...pendingPatch.current };
+      pendingPatch.current = {};
+      api.save(toSave)
         .then(() => { setSaveStatus("saved"); setTimeout(() => setSaveStatus("idle"), 2000); })
         .catch(() => { setSaveStatus("error"); setTimeout(() => setSaveStatus("idle"), 3000); });
     }, 800);
@@ -440,11 +450,21 @@ export default function SecondBrain() {
     const n = name.trim();
     const nd = { ...habitDataRef.current };
     days.forEach((d) => { nd[d] = { ...nd[d], [n]: false }; });
-    saveHabitData(nd);
-    if (group === "morning") saveMorning([...morningRef.current, n]);
-    else if (group === "evening") saveEvening([...eveningRef.current, n]);
-    else saveNight([...nightRef.current, n]);
+    habitDataRef.current = nd; setHabitData(nd);
+    if (group === "morning") { const next = [...morningRef.current, n]; morningRef.current = next; setMorningHabits(next); debouncedSave({ habitData: nd, morningHabits: next }); }
+    else if (group === "evening") { const next = [...eveningRef.current, n]; eveningRef.current = next; setEveningHabits(next); debouncedSave({ habitData: nd, eveningHabits: next }); }
+    else { const next = [...nightRef.current, n]; nightRef.current = next; setNightHabits(next); debouncedSave({ habitData: nd, nightHabits: next }); }
   };
+
+
+
+
+
+
+
+
+
+
 
   const deleteHabit = (group, habit) => {
     if (group === "morning") saveMorning(morningRef.current.filter((x) => x !== habit));
