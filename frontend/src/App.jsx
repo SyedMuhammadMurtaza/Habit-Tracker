@@ -5,7 +5,6 @@ const USER_ID  = "default";
 
 const DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat"];
 const DAY_LABELS   = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday" };
-const DAY_EMOJI    = { mon: "🟦", tue: "🟩", wed: "🟨", thu: "🟧", fri: "🟥", sat: "🟪" };
 
 const getLast10Days = () => {
   const days = [];
@@ -50,6 +49,9 @@ const INITIAL_WORKOUT_PRI  = ["Train 5 days a week", "Track calories", "Sleep 8 
 const INITIAL_SKINCARE_PRI = ["No touching face", "Change pillowcase weekly", "Stay hydrated"];
 const INITIAL_DIET_PRI     = ["Eat whole foods", "No sugar after 6pm", "Meal prep Sunday"];
 
+// ── Namespaced key: "mon::Cardio" prevents "Cardio" on mon colliding with "Cardio" on wed
+const makeKey = (dayKey, habit) => `${dayKey}::${habit}`;
+
 const buildHabitData = (habits) => {
   const days = getLast10Days(), data = {};
   days.forEach((day) => { data[day] = {}; habits.forEach((h) => { data[day][h] = Math.random() > 0.4; }); });
@@ -58,10 +60,21 @@ const buildHabitData = (habits) => {
   return data;
 };
 
-// Build habit data for day-grouped habits (all habits from all day groups combined)
+// Build habitData for day-grouped tabs using namespaced keys
 const buildDayGroupedHabitData = (dayHabits) => {
-  const allHabits = Object.values(dayHabits).flat();
-  return buildHabitData(allHabits);
+  const calDays = getLast10Days();
+  const data = {};
+  calDays.forEach((calDay) => {
+    data[calDay] = {};
+    Object.entries(dayHabits).forEach(([dk, habits]) => {
+      habits.forEach((h) => { data[calDay][makeKey(dk, h)] = Math.random() > 0.4; });
+    });
+  });
+  const today = calDays[calDays.length - 1];
+  Object.entries(dayHabits).forEach(([dk, habits]) => {
+    habits.forEach((h) => { data[today][makeKey(dk, h)] = false; });
+  });
+  return data;
 };
 
 const INITIAL_TODOS = [
@@ -159,16 +172,33 @@ function Pomodoro() {
   );
 }
 
-function HabitDotGrid({ habitData, habit, days, onToggle }) {
+// ── Dot grid — uses raw key directly (already namespaced for extra tabs, plain for core habits)
+function HabitDotGrid({ habitData, habitKey, days, onToggle }) {
   return (
     <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-      {days.map((day) => (<div key={day} onClick={() => onToggle(day, habit)} title={day} style={{ width: 12, height: 12, borderRadius: 3, background: habitData[day]?.[habit] ? "#3b82f6" : "#2a2a2a", border: habitData[day]?.[habit] ? "1px solid #60a5fa" : "1px solid #333", cursor: "pointer", transition: "all 0.15s" }} />))}
+      {days.map((day) => (
+        <div
+          key={day}
+          onClick={() => onToggle(day, habitKey)}
+          title={day}
+          style={{ width: 12, height: 12, borderRadius: 3, background: habitData[day]?.[habitKey] ? "#3b82f6" : "#2a2a2a", border: habitData[day]?.[habitKey] ? "1px solid #60a5fa" : "1px solid #333", cursor: "pointer", transition: "all 0.15s" }}
+        />
+      ))}
     </div>
   );
 }
 
-function HabitChart({ habitData, days, allHabits, accent = "#22c55e" }) {
-  const values = days.map((day) => { const d = habitData[day] || {}; const done = allHabits.filter((h) => d[h]).length; return allHabits.length ? Math.round((done / allHabits.length) * 100) : 0; });
+// ── Core habits dot grid (uses plain habit name as key)
+function HabitDotGridPlain({ habitData, habit, days, onToggle }) {
+  return <HabitDotGrid habitData={habitData} habitKey={habit} days={days} onToggle={onToggle} />;
+}
+
+function HabitChart({ habitData, days, allKeys, accent = "#22c55e" }) {
+  const values = days.map((day) => {
+    const d = habitData[day] || {};
+    const done = allKeys.filter((k) => d[k]).length;
+    return allKeys.length ? Math.round((done / allKeys.length) * 100) : 0;
+  });
   const W = 500, H = 140, PAD = { top: 16, right: 16, bottom: 24, left: 36 };
   const iW = W - PAD.left - PAD.right, iH = H - PAD.top - PAD.bottom;
   const pts = values.map((v, i) => ({ x: PAD.left + (i / Math.max(values.length - 1, 1)) * iW, y: PAD.top + iH - (v / 100) * iH }));
@@ -189,20 +219,20 @@ function HabitChart({ habitData, days, allHabits, accent = "#22c55e" }) {
   );
 }
 
-function DailyBreakdown({ habitData, days, allHabits, today, accent = "#22c55e" }) {
+function DailyBreakdown({ habitData, days, allKeys, today, accent = "#22c55e" }) {
   return (
     <Card>
       <ST t="Daily Breakdown" />
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
         {days.map((day) => {
-          const done = allHabits.filter((h) => habitData[day]?.[h]).length;
-          const pct  = allHabits.length ? Math.round((done / allHabits.length) * 100) : 0;
+          const done = allKeys.filter((k) => habitData[day]?.[k]).length;
+          const pct  = allKeys.length ? Math.round((done / allKeys.length) * 100) : 0;
           const isToday = day === today;
           return (
             <div key={day} style={{ minWidth: 72, background: isToday ? `${accent}18` : "#1a1a1a", border: `1px solid ${isToday ? accent : "#2a2a2a"}`, borderRadius: 10, padding: "10px 8px", textAlign: "center", flexShrink: 0 }}>
               <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 4, fontFamily: "'Space Mono',monospace" }}>{getMonthLabel(day)} {getDayLabel(day)}</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: pct >= 70 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444", fontFamily: "'Space Mono',monospace" }}>{pct}%</div>
-              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>{done}/{allHabits.length}</div>
+              <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4 }}>{done}/{allKeys.length}</div>
               {isToday && <div style={{ fontSize: 9, color: accent, marginTop: 4, fontWeight: 700 }}>TODAY</div>}
             </div>
           );
@@ -228,7 +258,7 @@ function HabitSection({ label, emoji, habits, group, newVal, setNew, habitData, 
         return (
           <div key={habit} style={{ display: "flex", alignItems: "center", gap: compact ? 8 : 12, padding: compact ? "6px 0" : "10px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
             <input type="checkbox" checked={!!done} onChange={() => toggleHabit(today, habit)} style={{ accentColor: ac, cursor: "pointer", width: compact ? 14 : 16, height: compact ? 14 : 16, flexShrink: 0 }} />
-            {isEditing ? (<><input value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(habit); if (e.key === "Escape") setEditingHabit(null); }} style={{ ...eInputStyle, flex: 1, minWidth: 80 }} autoFocus /><SaveEditBtn onClick={() => confirmEdit(habit)} /></>) : (<><span style={{ fontSize: 14, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: compact ? 80 : 120 }}>{habit}</span><HabitDotGrid habitData={habitData} habit={habit} days={days} onToggle={toggleHabit} /></>)}
+            {isEditing ? (<><input value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(habit); if (e.key === "Escape") setEditingHabit(null); }} style={{ ...eInputStyle, flex: 1, minWidth: 80 }} autoFocus /><SaveEditBtn onClick={() => confirmEdit(habit)} /></>) : (<><span style={{ fontSize: 14, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: compact ? 80 : 120 }}>{habit}</span><HabitDotGridPlain habitData={habitData} habit={habit} days={days} onToggle={toggleHabit} /></>)}
             <EditBtn onClick={() => isEditing ? setEditingHabit(null) : startEdit(habit)} active={isEditing} />
             <DelBtn onClick={() => deleteHabit(group, habit)} />
           </div>
@@ -269,22 +299,34 @@ function PriorityRow({ text, index, onDelete, onEdit, accent = "#22c55e" }) {
   );
 }
 
-// ── Day-Group Habit Row (used inside GenericTab) ───────────────────────────────
+// ── Day-Group Habit Row — uses namespaced key for toggle/dot-grid ─────────────
 function DayHabitRow({ habit, dayKey, habitData, today, days, onToggle, onDelete, onEdit, accent }) {
   const [editing, setEditing] = useState(false);
   const [editVal, setEditVal] = useState(habit);
-  const done = habitData[today]?.[habit];
+  const key  = makeKey(dayKey, habit);           // e.g. "mon::Cardio"
+  const done = habitData[today]?.[key];
+
   const confirmEdit = () => {
     if (editVal.trim() && editVal.trim() !== habit) onEdit(dayKey, habit, editVal.trim());
     setEditing(false);
   };
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
-      <input type="checkbox" checked={!!done} onChange={() => onToggle(today, habit)} style={{ accentColor: accent, cursor: "pointer", width: 15, height: 15, flexShrink: 0 }} />
+      <input
+        type="checkbox"
+        checked={!!done}
+        onChange={() => onToggle(today, key)}         // toggle by namespaced key
+        style={{ accentColor: accent, cursor: "pointer", width: 15, height: 15, flexShrink: 0 }}
+      />
       {editing ? (
         <><input value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(); if (e.key === "Escape") setEditing(false); }} style={{ ...eInputStyle, flex: 1, minWidth: 80, borderColor: accent }} autoFocus /><SaveEditBtn onClick={confirmEdit} /></>
       ) : (
-        <><span style={{ fontSize: 13, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: 100 }}>{habit}</span><HabitDotGrid habitData={habitData} habit={habit} days={days} onToggle={onToggle} /></>
+        <>
+          <span style={{ fontSize: 13, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: 100 }}>{habit}</span>
+          {/* Dot grid uses namespaced key so it reads the right slot */}
+          <HabitDotGrid habitData={habitData} habitKey={key} days={days} onToggle={onToggle} />
+        </>
       )}
       <EditBtn onClick={() => { setEditing(!editing); setEditVal(habit); }} active={editing} />
       <DelBtn onClick={() => onDelete(dayKey, habit)} />
@@ -292,29 +334,25 @@ function DayHabitRow({ habit, dayKey, habitData, today, days, onToggle, onDelete
   );
 }
 
-// ── Day Group Panel (one collapsible day section) ─────────────────────────────
+// ── Day Group Panel (collapsible) ─────────────────────────────────────────────
 function DayGroupPanel({ dayKey, label, habits, habitData, today, days, accent, onToggle, onAdd, onDelete, onEdit }) {
   const [open, setOpen] = useState(true);
   const [newVal, setNewVal] = useState("");
   const dayAccents = { mon: "#60a5fa", tue: "#34d399", wed: "#fbbf24", thu: "#f87171", fri: "#a78bfa", sat: "#f472b6" };
   const ac = dayAccents[dayKey] || accent;
 
-  const todayDone  = habits.filter((h) => habitData[today]?.[h]).length;
-  const pct        = habits.length ? Math.round((todayDone / habits.length) * 100) : 0;
+  // Count using namespaced keys
+  const todayDone = habits.filter((h) => habitData[today]?.[makeKey(dayKey, h)]).length;
+  const pct       = habits.length ? Math.round((todayDone / habits.length) * 100) : 0;
 
   return (
     <div style={{ marginBottom: 8, border: `1px solid ${open ? ac + "44" : "#1f1f1f"}`, borderRadius: 10, overflow: "hidden", transition: "border-color 0.2s" }}>
-      {/* Header */}
-      <div
-        onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: open ? `${ac}10` : "#111", cursor: "pointer", userSelect: "none" }}
-      >
+      <div onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: open ? `${ac}10` : "#111", cursor: "pointer", userSelect: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 10, color: ac, fontFamily: "'Space Mono',monospace", fontWeight: 700, letterSpacing: 2 }}>{label.toUpperCase()}</span>
           <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "'Space Mono',monospace" }}>{todayDone}/{habits.length} today</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Mini progress bar */}
           <div style={{ width: 60, height: 4, background: "#2a2a2a", borderRadius: 99, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${pct}%`, background: ac, borderRadius: 99, transition: "width 0.5s ease" }} />
           </div>
@@ -322,39 +360,15 @@ function DayGroupPanel({ dayKey, label, habits, habitData, today, days, accent, 
           <span style={{ color: ac, fontSize: 12, transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
         </div>
       </div>
-
-      {/* Body */}
       {open && (
         <div style={{ padding: "4px 14px 12px" }}>
-          {habits.length === 0 && (
-            <div style={{ color: "#4b5563", fontSize: 12, padding: "10px 0", fontFamily: "'Space Mono',monospace" }}>No tasks yet — add one below</div>
-          )}
+          {habits.length === 0 && <div style={{ color: "#4b5563", fontSize: 12, padding: "10px 0", fontFamily: "'Space Mono',monospace" }}>No tasks yet — add one below</div>}
           {habits.map((habit) => (
-            <DayHabitRow
-              key={habit}
-              habit={habit}
-              dayKey={dayKey}
-              habitData={habitData}
-              today={today}
-              days={days}
-              onToggle={onToggle}
-              onDelete={onDelete}
-              onEdit={onEdit}
-              accent={ac}
-            />
+            <DayHabitRow key={habit} habit={habit} dayKey={dayKey} habitData={habitData} today={today} days={days} onToggle={onToggle} onDelete={onDelete} onEdit={onEdit} accent={ac} />
           ))}
           <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            <input
-              value={newVal}
-              onChange={(e) => setNewVal(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }}
-              placeholder={`Add task for ${label}...`}
-              style={{ ...iStyle, fontSize: 11, borderColor: "#2a2a2a" }}
-            />
-            <button
-              onClick={() => { if (newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }}
-              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: ac, color: "#000", fontSize: 16, fontWeight: 700, cursor: "pointer" }}
-            >+</button>
+            <input value={newVal} onChange={(e) => setNewVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }} placeholder={`Add task for ${label}...`} style={{ ...iStyle, fontSize: 11, borderColor: "#2a2a2a" }} />
+            <button onClick={() => { if (newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: ac, color: "#000", fontSize: 16, fontWeight: 700, cursor: "pointer" }}>+</button>
           </div>
         </div>
       )}
@@ -362,15 +376,12 @@ function DayGroupPanel({ dayKey, label, habits, habitData, today, days, accent, 
   );
 }
 
-
-
 // ── Generic Tab (Workout / Skincare / Diet) with Mon–Sat groups ───────────────
 function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave }) {
   const dayHabitsKey  = `${tabKey}DayHabits`;
   const habitDataKey  = `${tabKey}HabitData`;
   const prioritiesKey = `${tabKey}Priorities`;
 
-  // Use refs so handlers never capture stale state
   const dayHabitsRef  = useRef(docData[dayHabitsKey]);
   const habitDataRef  = useRef(docData[habitDataKey]);
   const prioritiesRef = useRef(docData[prioritiesKey]);
@@ -380,57 +391,41 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
   const [priorities,  setPriorities]  = useState(docData[prioritiesKey]);
   const [newPriority, setNewPriority] = useState("");
 
-  // Keep refs in sync with state
   useEffect(() => { dayHabitsRef.current  = dayHabits;  }, [dayHabits]);
   useEffect(() => { habitDataRef.current  = habitData;  }, [habitData]);
   useEffect(() => { prioritiesRef.current = priorities; }, [priorities]);
 
-  // Sync from parent docData on initial load
   useEffect(() => {
     setDayHabits(docData[dayHabitsKey]);   dayHabitsRef.current  = docData[dayHabitsKey];
     setHabitData(docData[habitDataKey]);   habitDataRef.current  = docData[habitDataKey];
     setPriorities(docData[prioritiesKey]); prioritiesRef.current = docData[prioritiesKey];
   }, [docData[dayHabitsKey], docData[habitDataKey], docData[prioritiesKey]]);
 
-  // Atomic helpers — always update ref + state + call onSave together
-  const commitDayHabits = (next) => {
-    dayHabitsRef.current = next;
-    setDayHabits(next);
-    onSave({ [dayHabitsKey]: next });
-  };
-  const commitHabitData = (next) => {
-    habitDataRef.current = next;
-    setHabitData(next);
-    onSave({ [habitDataKey]: next });
-  };
-  const commitBoth = (nextDH, nextHD) => {
-    dayHabitsRef.current = nextDH;  setDayHabits(nextDH);
-    habitDataRef.current = nextHD;  setHabitData(nextHD);
+  const commitDayHabits = (next) => { dayHabitsRef.current = next; setDayHabits(next); onSave({ [dayHabitsKey]: next }); };
+  const commitHabitData = (next) => { habitDataRef.current = next; setHabitData(next); onSave({ [habitDataKey]: next }); };
+  const commitBoth      = (nextDH, nextHD) => {
+    dayHabitsRef.current = nextDH; setDayHabits(nextDH);
+    habitDataRef.current = nextHD; setHabitData(nextHD);
     onSave({ [dayHabitsKey]: nextDH, [habitDataKey]: nextHD });
   };
-  const commitPriorities = (next) => {
-    prioritiesRef.current = next;
-    setPriorities(next);
-    onSave({ [prioritiesKey]: next });
-  };
+  const commitPriorities = (next) => { prioritiesRef.current = next; setPriorities(next); onSave({ [prioritiesKey]: next }); };
 
-  // ── Habit actions ──────────────────────────────────────────────────────────
-  const toggleHabit = (calendarDay, habit) => {
-    const cur = habitDataRef.current;
-    const next = { ...cur, [calendarDay]: { ...cur[calendarDay], [habit]: !cur[calendarDay]?.[habit] } };
+  // Toggle uses the raw key (already namespaced when passed from DayHabitRow)
+  const toggleHabit = (calendarDay, key) => {
+    const cur  = habitDataRef.current;
+    const next = { ...cur, [calendarDay]: { ...cur[calendarDay], [key]: !cur[calendarDay]?.[key] } };
     commitHabitData(next);
   };
 
   const addHabit = (dayKey, name) => {
     if (!name.trim()) return;
-    const n = name.trim();
-    // 1. Update the day group list
-    const curDH    = dayHabitsRef.current;
-    const newDH    = { ...curDH, [dayKey]: [...(curDH[dayKey] || []), n] };
-    // 2. Initialise this habit as false for every tracked calendar day
-    const curHD    = habitDataRef.current;
-    const newHD    = { ...curHD };
-    days.forEach((d) => { newHD[d] = { ...newHD[d], [n]: false }; });
+    const n    = name.trim();
+    const k    = makeKey(dayKey, n);                          // namespaced key
+    const curDH = dayHabitsRef.current;
+    const newDH = { ...curDH, [dayKey]: [...(curDH[dayKey] || []), n] };
+    const curHD = habitDataRef.current;
+    const newHD = { ...curHD };
+    days.forEach((d) => { newHD[d] = { ...newHD[d], [k]: false }; });  // initialise with namespaced key
     commitBoth(newDH, newHD);
   };
 
@@ -442,23 +437,25 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
 
   const editHabit = (dayKey, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
-    const curDH = dayHabitsRef.current;
-    const newDH = { ...curDH, [dayKey]: (curDH[dayKey] || []).map((x) => x === oldName ? newName : x) };
-    const curHD = habitDataRef.current;
-    const newHD = {};
+    const oldKey = makeKey(dayKey, oldName);
+    const newKey = makeKey(dayKey, newName);
+    const curDH  = dayHabitsRef.current;
+    const newDH  = { ...curDH, [dayKey]: (curDH[dayKey] || []).map((x) => x === oldName ? newName : x) };
+    const curHD  = habitDataRef.current;
+    const newHD  = {};
     days.forEach((d) => {
       newHD[d] = { ...curHD[d] };
-      if (oldName in (newHD[d] || {})) { newHD[d][newName] = newHD[d][oldName]; delete newHD[d][oldName]; }
+      if (oldKey in (newHD[d] || {})) { newHD[d][newKey] = newHD[d][oldKey]; delete newHD[d][oldKey]; }
     });
     commitBoth(newDH, newHD);
   };
 
-  // ── Priority actions ───────────────────────────────────────────────────────
   const addPriority    = () => { if (!newPriority.trim()) return; commitPriorities([...prioritiesRef.current, newPriority.trim()]); setNewPriority(""); };
   const deletePriority = (i) => commitPriorities(prioritiesRef.current.filter((_, j) => j !== i));
   const editPriority   = (i, val) => commitPriorities(prioritiesRef.current.map((p, j) => j === i ? val : p));
 
-  const allHabits = Object.values(dayHabits).flat();
+  // All namespaced keys — used by chart + daily breakdown
+  const allKeys = Object.entries(dayHabits).flatMap(([dk, habits]) => habits.map((h) => makeKey(dk, h)));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -493,8 +490,9 @@ function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave
           </div>
         </Card>
       </div>
-      <HabitChart habitData={habitData} days={days} allHabits={allHabits} accent={accent} />
-      <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} accent={accent} />
+      {/* Chart and breakdown now use allKeys (namespaced) so they reflect actual toggles */}
+      <HabitChart habitData={habitData} days={days} allKeys={allKeys} accent={accent} />
+      <DailyBreakdown habitData={habitData} days={days} allKeys={allKeys} today={today} accent={accent} />
     </div>
   );
 }
@@ -526,7 +524,6 @@ export default function SecondBrain() {
   useEffect(() => { todosRef.current      = todos;         }, [todos]);
   useEffect(() => { prioritiesRef.current = priorities;    }, [priorities]);
 
-  // docData for extra tabs — now uses DayHabits instead of flat Habits
   const [docData, setDocData] = useState({
     workoutDayHabits:   INITIAL_WORKOUT_DAYS,
     workoutHabitData:   {},
@@ -565,7 +562,6 @@ export default function SecondBrain() {
       days.forEach((day) => { if (!merged[day]) merged[day] = {}; allH.forEach((h) => { if (merged[day][h] === undefined) merged[day][h] = false; }); });
       setHabitData(merged);
 
-      // Load extra tabs — support both old flat format and new day-grouped format
       const wdh  = doc.workoutDayHabits  || INITIAL_WORKOUT_DAYS;
       const skdh = doc.skincareDayHabits || INITIAL_SKINCARE_DAYS;
       const ddh  = doc.dietDayHabits     || INITIAL_DIET_DAYS;
@@ -732,12 +728,10 @@ export default function SecondBrain() {
 
       <div style={{ flex: 1, padding: "16px 24px", width: "100%", paddingBottom: 32 }}>
 
-        {/* ── EXTRA TABS (Workout / Skincare / Diet) ── */}
         {activeExtra && (
           <GenericTab key={activeExtra.tabKey} tabKey={activeExtra.tabKey} accent={activeExtra.accent} label={activeExtra.label} emoji={activeExtra.emoji} days={days} today={today} docData={docData} onSave={saveExtra} />
         )}
 
-        {/* ── DASHBOARD ── */}
         {tab === "dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div className="row1-grid">
@@ -776,15 +770,15 @@ export default function SecondBrain() {
               </Card>
               <Pomodoro />
             </div>
-            <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
-            <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} />
+            <HabitChart habitData={habitData} days={days} allKeys={allHabits} />
+            <DailyBreakdown habitData={habitData} days={days} allKeys={allHabits} today={today} />
           </div>
         )}
 
         {tab === "habits" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {habitSections.map(({ label, emoji, group, habits, newVal, setNew }) => (<Card key={group}><ST t={`${emoji} ${label} Habits`} /><HabitSection label={label} emoji={emoji} group={group} habits={habits} newVal={newVal} setNew={setNew} {...sharedHabitProps} /></Card>))}
-            <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
+            <HabitChart habitData={habitData} days={days} allKeys={allHabits} />
           </div>
         )}
 
@@ -803,8 +797,8 @@ export default function SecondBrain() {
 
         {tab === "chart" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <HabitChart habitData={habitData} days={days} allHabits={allHabits} />
-            <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} />
+            <HabitChart habitData={habitData} days={days} allKeys={allHabits} />
+            <DailyBreakdown habitData={habitData} days={days} allKeys={allHabits} today={today} />
           </div>
         )}
 
