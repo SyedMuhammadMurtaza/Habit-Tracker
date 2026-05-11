@@ -3,6 +3,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const API_BASE = import.meta.env.VITE_API_BASE;
 const USER_ID  = "default";
 
+const DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat"];
+const DAY_LABELS   = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday" };
+const DAY_EMOJI    = { mon: "🟦", tue: "🟩", wed: "🟨", thu: "🟧", fri: "🟥", sat: "🟪" };
+
 const getLast10Days = () => {
   const days = [];
   for (let i = 9; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d.toISOString().split("T")[0]); }
@@ -16,9 +20,32 @@ const TAG_COLORS = { Urgent: { bg: "#ef4444", text: "#fff" }, Medium: { bg: "#22
 const INITIAL_MORNING  = ["Cold Shower", "Daily Journal", "Gym", "Yoga"];
 const INITIAL_EVENING  = ["Read", "Study", "Wash Face"];
 const INITIAL_NIGHT    = ["Meditate", "Plan Tomorrow", "Sleep by 11pm"];
-const INITIAL_WORKOUT  = ["Warm Up", "Cardio", "Strength Training", "Cool Down", "Protein Intake"];
-const INITIAL_SKINCARE = ["Cleanser", "Toner", "Moisturizer", "Sunscreen", "Eye Cream"];
-const INITIAL_DIET     = ["Breakfast", "Lunch", "Dinner", "2L Water", "No Junk Food"];
+
+// ── Day-grouped defaults for extra tabs ──────────────────────────────────────
+const INITIAL_WORKOUT_DAYS = {
+  mon: ["Warm Up", "Cardio", "Cool Down"],
+  tue: ["Strength Training", "Protein Intake"],
+  wed: ["Warm Up", "Cardio", "Cool Down"],
+  thu: ["Strength Training", "Core Work"],
+  fri: ["Warm Up", "Cardio", "Cool Down"],
+  sat: ["Full Body Workout", "Stretching"],
+};
+const INITIAL_SKINCARE_DAYS = {
+  mon: ["Cleanser", "Toner", "Moisturizer"],
+  tue: ["Cleanser", "Toner", "Moisturizer", "Sunscreen"],
+  wed: ["Cleanser", "Exfoliate", "Moisturizer"],
+  thu: ["Cleanser", "Toner", "Moisturizer", "Eye Cream"],
+  fri: ["Cleanser", "Toner", "Moisturizer", "Sunscreen"],
+  sat: ["Deep Cleanse", "Face Mask", "Moisturizer"],
+};
+const INITIAL_DIET_DAYS = {
+  mon: ["Breakfast", "Lunch", "Dinner", "2L Water"],
+  tue: ["Breakfast", "Lunch", "Dinner", "2L Water", "No Junk Food"],
+  wed: ["Breakfast", "Meal Prep", "Dinner", "2L Water"],
+  thu: ["Breakfast", "Lunch", "Dinner", "2L Water"],
+  fri: ["Breakfast", "Lunch", "Dinner", "2L Water", "No Sugar"],
+  sat: ["Cheat Meal", "2L Water", "Light Dinner"],
+};
 const INITIAL_WORKOUT_PRI  = ["Train 5 days a week", "Track calories", "Sleep 8 hours"];
 const INITIAL_SKINCARE_PRI = ["No touching face", "Change pillowcase weekly", "Stay hydrated"];
 const INITIAL_DIET_PRI     = ["Eat whole foods", "No sugar after 6pm", "Meal prep Sunday"];
@@ -29,6 +56,12 @@ const buildHabitData = (habits) => {
   const today = days[days.length - 1];
   habits.forEach((h) => (data[today][h] = false));
   return data;
+};
+
+// Build habit data for day-grouped habits (all habits from all day groups combined)
+const buildDayGroupedHabitData = (dayHabits) => {
+  const allHabits = Object.values(dayHabits).flat();
+  return buildHabitData(allHabits);
 };
 
 const INITIAL_TODOS = [
@@ -236,93 +269,232 @@ function PriorityRow({ text, index, onDelete, onEdit, accent = "#22c55e" }) {
   );
 }
 
-// ── Generic Tab uses refs so it never reads stale state ───────────────────────
+// ── Day-Group Habit Row (used inside GenericTab) ───────────────────────────────
+function DayHabitRow({ habit, dayKey, habitData, today, days, onToggle, onDelete, onEdit, accent }) {
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState(habit);
+  const done = habitData[today]?.[habit];
+  const confirmEdit = () => {
+    if (editVal.trim() && editVal.trim() !== habit) onEdit(dayKey, habit, editVal.trim());
+    setEditing(false);
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid #1a1a1a", flexWrap: "wrap" }}>
+      <input type="checkbox" checked={!!done} onChange={() => onToggle(today, habit)} style={{ accentColor: accent, cursor: "pointer", width: 15, height: 15, flexShrink: 0 }} />
+      {editing ? (
+        <><input value={editVal} onChange={(e) => setEditVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(); if (e.key === "Escape") setEditing(false); }} style={{ ...eInputStyle, flex: 1, minWidth: 80, borderColor: accent }} autoFocus /><SaveEditBtn onClick={confirmEdit} /></>
+      ) : (
+        <><span style={{ fontSize: 13, flex: 1, color: done ? "#86efac" : "#d1d5db", fontWeight: done ? 600 : 400, minWidth: 100 }}>{habit}</span><HabitDotGrid habitData={habitData} habit={habit} days={days} onToggle={onToggle} /></>
+      )}
+      <EditBtn onClick={() => { setEditing(!editing); setEditVal(habit); }} active={editing} />
+      <DelBtn onClick={() => onDelete(dayKey, habit)} />
+    </div>
+  );
+}
+
+// ── Day Group Panel (one collapsible day section) ─────────────────────────────
+function DayGroupPanel({ dayKey, label, habits, habitData, today, days, accent, onToggle, onAdd, onDelete, onEdit }) {
+  const [open, setOpen] = useState(true);
+  const [newVal, setNewVal] = useState("");
+  const dayAccents = { mon: "#60a5fa", tue: "#34d399", wed: "#fbbf24", thu: "#f87171", fri: "#a78bfa", sat: "#f472b6" };
+  const ac = dayAccents[dayKey] || accent;
+
+  const todayDone  = habits.filter((h) => habitData[today]?.[h]).length;
+  const pct        = habits.length ? Math.round((todayDone / habits.length) * 100) : 0;
+
+  return (
+    <div style={{ marginBottom: 8, border: `1px solid ${open ? ac + "44" : "#1f1f1f"}`, borderRadius: 10, overflow: "hidden", transition: "border-color 0.2s" }}>
+      {/* Header */}
+      <div
+        onClick={() => setOpen(!open)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: open ? `${ac}10` : "#111", cursor: "pointer", userSelect: "none" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 10, color: ac, fontFamily: "'Space Mono',monospace", fontWeight: 700, letterSpacing: 2 }}>{label.toUpperCase()}</span>
+          <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "'Space Mono',monospace" }}>{todayDone}/{habits.length} today</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Mini progress bar */}
+          <div style={{ width: 60, height: 4, background: "#2a2a2a", borderRadius: 99, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: ac, borderRadius: 99, transition: "width 0.5s ease" }} />
+          </div>
+          <span style={{ fontSize: 10, color: ac, fontFamily: "'Space Mono',monospace", minWidth: 28, textAlign: "right" }}>{pct}%</span>
+          <span style={{ color: ac, fontSize: 12, transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
+        </div>
+      </div>
+
+      {/* Body */}
+      {open && (
+        <div style={{ padding: "4px 14px 12px" }}>
+          {habits.length === 0 && (
+            <div style={{ color: "#4b5563", fontSize: 12, padding: "10px 0", fontFamily: "'Space Mono',monospace" }}>No tasks yet — add one below</div>
+          )}
+          {habits.map((habit) => (
+            <DayHabitRow
+              key={habit}
+              habit={habit}
+              dayKey={dayKey}
+              habitData={habitData}
+              today={today}
+              days={days}
+              onToggle={onToggle}
+              onDelete={onDelete}
+              onEdit={onEdit}
+              accent={ac}
+            />
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+            <input
+              value={newVal}
+              onChange={(e) => setNewVal(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }}
+              placeholder={`Add task for ${label}...`}
+              style={{ ...iStyle, fontSize: 11, borderColor: "#2a2a2a" }}
+            />
+            <button
+              onClick={() => { if (newVal.trim()) { onAdd(dayKey, newVal.trim()); setNewVal(""); } }}
+              style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: ac, color: "#000", fontSize: 16, fontWeight: 700, cursor: "pointer" }}
+            >+</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+// ── Generic Tab (Workout / Skincare / Diet) with Mon–Sat groups ───────────────
 function GenericTab({ tabKey, accent, label, emoji, days, today, docData, onSave }) {
-  const habitsKey     = `${tabKey}Habits`;
+  const dayHabitsKey  = `${tabKey}DayHabits`;
   const habitDataKey  = `${tabKey}HabitData`;
   const prioritiesKey = `${tabKey}Priorities`;
 
-  // use refs so handlers always read latest values
-  const habitsRef     = useRef(docData[habitsKey]);
+  // Use refs so handlers never capture stale state
+  const dayHabitsRef  = useRef(docData[dayHabitsKey]);
   const habitDataRef  = useRef(docData[habitDataKey]);
   const prioritiesRef = useRef(docData[prioritiesKey]);
 
-  const [habits,     setHabits]     = useState(docData[habitsKey]);
-  const [habitData,  setHabitData]  = useState(docData[habitDataKey]);
-  const [priorities, setPriorities] = useState(docData[prioritiesKey]);
-  const [newHabit,    setNewHabit]    = useState("");
+  const [dayHabits,   setDayHabits]   = useState(docData[dayHabitsKey]);
+  const [habitData,   setHabitData]   = useState(docData[habitDataKey]);
+  const [priorities,  setPriorities]  = useState(docData[prioritiesKey]);
   const [newPriority, setNewPriority] = useState("");
 
-  // keep refs in sync
-  useEffect(() => { habitsRef.current     = habits;     }, [habits]);
+  // Keep refs in sync with state
+  useEffect(() => { dayHabitsRef.current  = dayHabits;  }, [dayHabits]);
   useEffect(() => { habitDataRef.current  = habitData;  }, [habitData]);
   useEffect(() => { prioritiesRef.current = priorities; }, [priorities]);
 
-  // sync if docData changes (initial load)
+  // Sync from parent docData on initial load
   useEffect(() => {
-    setHabits(docData[habitsKey]);
-    setHabitData(docData[habitDataKey]);
-    setPriorities(docData[prioritiesKey]);
-  }, [docData[habitsKey], docData[habitDataKey], docData[prioritiesKey]]);
+    setDayHabits(docData[dayHabitsKey]);   dayHabitsRef.current  = docData[dayHabitsKey];
+    setHabitData(docData[habitDataKey]);   habitDataRef.current  = docData[habitDataKey];
+    setPriorities(docData[prioritiesKey]); prioritiesRef.current = docData[prioritiesKey];
+  }, [docData[dayHabitsKey], docData[habitDataKey], docData[prioritiesKey]]);
 
-  const saveHabits     = (next) => { setHabits(next);     habitsRef.current = next;    onSave({ [habitsKey]: next }); };
-  const saveHabitData  = (next) => { setHabitData(next);  habitDataRef.current = next; onSave({ [habitDataKey]: next }); };
-  const savePriorities = (next) => { setPriorities(next); prioritiesRef.current = next; onSave({ [prioritiesKey]: next }); };
-
-  const toggleHabit = (day, habit) => {
-    const next = { ...habitDataRef.current, [day]: { ...habitDataRef.current[day], [habit]: !habitDataRef.current[day]?.[habit] } };
-    saveHabitData(next);
+  // Atomic helpers — always update ref + state + call onSave together
+  const commitDayHabits = (next) => {
+    dayHabitsRef.current = next;
+    setDayHabits(next);
+    onSave({ [dayHabitsKey]: next });
+  };
+  const commitHabitData = (next) => {
+    habitDataRef.current = next;
+    setHabitData(next);
+    onSave({ [habitDataKey]: next });
+  };
+  const commitBoth = (nextDH, nextHD) => {
+    dayHabitsRef.current = nextDH;  setDayHabits(nextDH);
+    habitDataRef.current = nextHD;  setHabitData(nextHD);
+    onSave({ [dayHabitsKey]: nextDH, [habitDataKey]: nextHD });
+  };
+  const commitPriorities = (next) => {
+    prioritiesRef.current = next;
+    setPriorities(next);
+    onSave({ [prioritiesKey]: next });
   };
 
-  const addHabit = (group, name) => {
+  // ── Habit actions ──────────────────────────────────────────────────────────
+  const toggleHabit = (calendarDay, habit) => {
+    const cur = habitDataRef.current;
+    const next = { ...cur, [calendarDay]: { ...cur[calendarDay], [habit]: !cur[calendarDay]?.[habit] } };
+    commitHabitData(next);
+  };
+
+  const addHabit = (dayKey, name) => {
     if (!name.trim()) return;
     const n = name.trim();
-    const nd = { ...habitDataRef.current };
-    days.forEach((d) => { nd[d] = { ...nd[d], [n]: false }; });
-    // save both in one patch so debounce doesn't lose either
-    const newHabits = [...habitsRef.current, n];
-    setHabits(newHabits);     habitsRef.current = newHabits;
-    setHabitData(nd);         habitDataRef.current = nd;
-    onSave({ [habitsKey]: newHabits, [habitDataKey]: nd });
+    // 1. Update the day group list
+    const curDH    = dayHabitsRef.current;
+    const newDH    = { ...curDH, [dayKey]: [...(curDH[dayKey] || []), n] };
+    // 2. Initialise this habit as false for every tracked calendar day
+    const curHD    = habitDataRef.current;
+    const newHD    = { ...curHD };
+    days.forEach((d) => { newHD[d] = { ...newHD[d], [n]: false }; });
+    commitBoth(newDH, newHD);
   };
 
-  const deleteHabit = (group, habit) => saveHabits(habitsRef.current.filter((x) => x !== habit));
+  const deleteHabit = (dayKey, habit) => {
+    const cur   = dayHabitsRef.current;
+    const newDH = { ...cur, [dayKey]: (cur[dayKey] || []).filter((x) => x !== habit) };
+    commitDayHabits(newDH);
+  };
 
-  const editHabit = (group, oldName, newName) => {
+  const editHabit = (dayKey, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
-    const nd = {};
+    const curDH = dayHabitsRef.current;
+    const newDH = { ...curDH, [dayKey]: (curDH[dayKey] || []).map((x) => x === oldName ? newName : x) };
+    const curHD = habitDataRef.current;
+    const newHD = {};
     days.forEach((d) => {
-      nd[d] = { ...habitDataRef.current[d] };
-      if (oldName in (nd[d] || {})) { nd[d][newName] = nd[d][oldName]; delete nd[d][oldName]; }
+      newHD[d] = { ...curHD[d] };
+      if (oldName in (newHD[d] || {})) { newHD[d][newName] = newHD[d][oldName]; delete newHD[d][oldName]; }
     });
-    const newHabits = habitsRef.current.map((x) => x === oldName ? newName : x);
-    setHabits(newHabits);     habitsRef.current = newHabits;
-    setHabitData(nd);         habitDataRef.current = nd;
-    onSave({ [habitsKey]: newHabits, [habitDataKey]: nd });
+    commitBoth(newDH, newHD);
   };
 
-  const addPriority    = () => { if (!newPriority.trim()) return; savePriorities([...prioritiesRef.current, newPriority.trim()]); setNewPriority(""); };
-  const deletePriority = (i) => savePriorities(prioritiesRef.current.filter((_, j) => j !== i));
-  const editPriority   = (i, val) => savePriorities(prioritiesRef.current.map((p, j) => j === i ? val : p));
+  // ── Priority actions ───────────────────────────────────────────────────────
+  const addPriority    = () => { if (!newPriority.trim()) return; commitPriorities([...prioritiesRef.current, newPriority.trim()]); setNewPriority(""); };
+  const deletePriority = (i) => commitPriorities(prioritiesRef.current.filter((_, j) => j !== i));
+  const editPriority   = (i, val) => commitPriorities(prioritiesRef.current.map((p, j) => j === i ? val : p));
+
+  const allHabits = Object.values(dayHabits).flat();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 12 }}>
         <Card>
-          <ST t={`${emoji} ${label} Tracker`} />
-          <HabitSection label="" emoji={emoji} habits={habits} group={tabKey} newVal={newHabit} setNew={setNewHabit} habitData={habitData} today={today} days={days} toggleHabit={toggleHabit} addHabit={addHabit} deleteHabit={deleteHabit} editHabit={editHabit} accent={accent} />
+          <ST t={`${emoji} ${label} — Weekly Schedule`} />
+          {DAYS_OF_WEEK.map((dk) => (
+            <DayGroupPanel
+              key={dk}
+              dayKey={dk}
+              label={DAY_LABELS[dk]}
+              habits={dayHabits[dk] || []}
+              habitData={habitData}
+              today={today}
+              days={days}
+              accent={accent}
+              onToggle={toggleHabit}
+              onAdd={addHabit}
+              onDelete={deleteHabit}
+              onEdit={editHabit}
+            />
+          ))}
         </Card>
         <Card>
           <ST t={`${emoji} Priorities`} />
-          {priorities.map((p, i) => (<PriorityRow key={i} text={p} index={i} onDelete={deletePriority} onEdit={editPriority} accent={accent} />))}
+          {priorities.map((p, i) => (
+            <PriorityRow key={i} text={p} index={i} onDelete={deletePriority} onEdit={editPriority} accent={accent} />
+          ))}
           <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
             <input value={newPriority} onChange={(e) => setNewPriority(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addPriority(); }} placeholder="Add priority..." style={iStyle} />
             <AddBtn onClick={addPriority} />
           </div>
         </Card>
       </div>
-      <HabitChart habitData={habitData} days={days} allHabits={habits} accent={accent} />
-      <DailyBreakdown habitData={habitData} days={days} allHabits={habits} today={today} accent={accent} />
+      <HabitChart habitData={habitData} days={days} allHabits={allHabits} accent={accent} />
+      <DailyBreakdown habitData={habitData} days={days} allHabits={allHabits} today={today} accent={accent} />
     </div>
   );
 }
@@ -333,7 +505,6 @@ export default function SecondBrain() {
   const [loading,    setLoading]    = useState(true);
   const [saveStatus, setSaveStatus] = useState("idle");
 
-  // core state — also keep refs so handlers never read stale
   const [morningHabits, setMorningHabits] = useState(INITIAL_MORNING);
   const [eveningHabits, setEveningHabits] = useState(INITIAL_EVENING);
   const [nightHabits,   setNightHabits]   = useState(INITIAL_NIGHT);
@@ -341,12 +512,12 @@ export default function SecondBrain() {
   const [todos,         setTodos]         = useState(INITIAL_TODOS);
   const [priorities,    setPriorities]    = useState(["Start on new business", "Post on social media", "Apply to new job"]);
 
-  const morningRef   = useRef(INITIAL_MORNING);
-  const eveningRef   = useRef(INITIAL_EVENING);
-  const nightRef     = useRef(INITIAL_NIGHT);
-  const habitDataRef = useRef({});
-  const todosRef     = useRef(INITIAL_TODOS);
-  const prioritiesRef= useRef(["Start on new business", "Post on social media", "Apply to new job"]);
+  const morningRef    = useRef(INITIAL_MORNING);
+  const eveningRef    = useRef(INITIAL_EVENING);
+  const nightRef      = useRef(INITIAL_NIGHT);
+  const habitDataRef  = useRef({});
+  const todosRef      = useRef(INITIAL_TODOS);
+  const prioritiesRef = useRef(["Start on new business", "Post on social media", "Apply to new job"]);
 
   useEffect(() => { morningRef.current    = morningHabits; }, [morningHabits]);
   useEffect(() => { eveningRef.current    = eveningHabits; }, [eveningHabits]);
@@ -355,19 +526,25 @@ export default function SecondBrain() {
   useEffect(() => { todosRef.current      = todos;         }, [todos]);
   useEffect(() => { prioritiesRef.current = priorities;    }, [priorities]);
 
-  // extra tabs data (single object — no stale closure issues because we always pass fresh docData)
+  // docData for extra tabs — now uses DayHabits instead of flat Habits
   const [docData, setDocData] = useState({
-    workoutHabits: INITIAL_WORKOUT, workoutHabitData: {}, workoutPriorities: INITIAL_WORKOUT_PRI,
-    skincareHabits: INITIAL_SKINCARE, skincareHabitData: {}, skincarePriorities: INITIAL_SKINCARE_PRI,
-    dietHabits: INITIAL_DIET, dietHabitData: {}, dietPriorities: INITIAL_DIET_PRI,
+    workoutDayHabits:   INITIAL_WORKOUT_DAYS,
+    workoutHabitData:   {},
+    workoutPriorities:  INITIAL_WORKOUT_PRI,
+    skincareDayHabits:  INITIAL_SKINCARE_DAYS,
+    skincareHabitData:  {},
+    skincarePriorities: INITIAL_SKINCARE_PRI,
+    dietDayHabits:      INITIAL_DIET_DAYS,
+    dietHabitData:      {},
+    dietPriorities:     INITIAL_DIET_PRI,
   });
 
-  const [newTodo,         setNewTodo]         = useState("");
-  const [newTodoTag,      setNewTodoTag]       = useState("Medium");
-  const [newPriority,     setNewPriority]      = useState("");
-  const [newMorningHabit, setNewMorningHabit]  = useState("");
-  const [newEveningHabit, setNewEveningHabit]  = useState("");
-  const [newNightHabit,   setNewNightHabit]    = useState("");
+  const [newTodo,         setNewTodo]        = useState("");
+  const [newTodoTag,      setNewTodoTag]      = useState("Medium");
+  const [newPriority,     setNewPriority]     = useState("");
+  const [newMorningHabit, setNewMorningHabit] = useState("");
+  const [newEveningHabit, setNewEveningHabit] = useState("");
+  const [newNightHabit,   setNewNightHabit]   = useState("");
 
   const days  = getLast10Days();
   const today = days[days.length - 1];
@@ -382,37 +559,48 @@ export default function SecondBrain() {
       setMorningHabits(m); setEveningHabits(e); setNightHabits(n);
       setTodos(doc.todos?.length ? doc.todos : INITIAL_TODOS);
       setPriorities(doc.priorities?.length ? doc.priorities : ["Start on new business", "Post on social media", "Apply to new job"]);
-      const saved = doc.habitData || {};
-      const allH  = [...m, ...e, ...n];
+      const saved  = doc.habitData || {};
+      const allH   = [...m, ...e, ...n];
       const merged = { ...saved };
       days.forEach((day) => { if (!merged[day]) merged[day] = {}; allH.forEach((h) => { if (merged[day][h] === undefined) merged[day][h] = false; }); });
       setHabitData(merged);
+
+      // Load extra tabs — support both old flat format and new day-grouped format
+      const wdh  = doc.workoutDayHabits  || INITIAL_WORKOUT_DAYS;
+      const skdh = doc.skincareDayHabits || INITIAL_SKINCARE_DAYS;
+      const ddh  = doc.dietDayHabits     || INITIAL_DIET_DAYS;
+
       setDocData({
-        workoutHabits:      doc.workoutHabits      || INITIAL_WORKOUT,
-        workoutHabitData:   doc.workoutHabitData   || buildHabitData(INITIAL_WORKOUT),
+        workoutDayHabits:   wdh,
+        workoutHabitData:   doc.workoutHabitData   || buildDayGroupedHabitData(wdh),
         workoutPriorities:  doc.workoutPriorities  || INITIAL_WORKOUT_PRI,
-        skincareHabits:     doc.skincareHabits     || INITIAL_SKINCARE,
-        skincareHabitData:  doc.skincareHabitData  || buildHabitData(INITIAL_SKINCARE),
+        skincareDayHabits:  skdh,
+        skincareHabitData:  doc.skincareHabitData  || buildDayGroupedHabitData(skdh),
         skincarePriorities: doc.skincarePriorities || INITIAL_SKINCARE_PRI,
-        dietHabits:         doc.dietHabits         || INITIAL_DIET,
-        dietHabitData:      doc.dietHabitData      || buildHabitData(INITIAL_DIET),
+        dietDayHabits:      ddh,
+        dietHabitData:      doc.dietHabitData      || buildDayGroupedHabitData(ddh),
         dietPriorities:     doc.dietPriorities     || INITIAL_DIET_PRI,
       });
     }).catch(() => {
       setHabitData(buildHabitData([...INITIAL_MORNING, ...INITIAL_EVENING, ...INITIAL_NIGHT]));
       setDocData({
-        workoutHabits: INITIAL_WORKOUT, workoutHabitData: buildHabitData(INITIAL_WORKOUT), workoutPriorities: INITIAL_WORKOUT_PRI,
-        skincareHabits: INITIAL_SKINCARE, skincareHabitData: buildHabitData(INITIAL_SKINCARE), skincarePriorities: INITIAL_SKINCARE_PRI,
-        dietHabits: INITIAL_DIET, dietHabitData: buildHabitData(INITIAL_DIET), dietPriorities: INITIAL_DIET_PRI,
+        workoutDayHabits:   INITIAL_WORKOUT_DAYS,
+        workoutHabitData:   buildDayGroupedHabitData(INITIAL_WORKOUT_DAYS),
+        workoutPriorities:  INITIAL_WORKOUT_PRI,
+        skincareDayHabits:  INITIAL_SKINCARE_DAYS,
+        skincareHabitData:  buildDayGroupedHabitData(INITIAL_SKINCARE_DAYS),
+        skincarePriorities: INITIAL_SKINCARE_PRI,
+        dietDayHabits:      INITIAL_DIET_DAYS,
+        dietHabitData:      buildDayGroupedHabitData(INITIAL_DIET_DAYS),
+        dietPriorities:     INITIAL_DIET_PRI,
       });
     }).finally(() => setLoading(false));
   }, []);
 
   // ── Debounced save ────────────────────────────────────────────────────────
-  const timerRef       = useRef(null);
-  const pendingPatch   = useRef({});
+  const timerRef     = useRef(null);
+  const pendingPatch = useRef({});
   const debouncedSave = useCallback((patch) => {
-    // accumulate all patches so rapid consecutive saves don't lose data
     pendingPatch.current = { ...pendingPatch.current, ...patch };
     clearTimeout(timerRef.current);
     setSaveStatus("saving");
@@ -425,21 +613,19 @@ export default function SecondBrain() {
     }, 800);
   }, []);
 
-  // ── Core persisted setters (use refs so no stale closure) ─────────────────
-  const saveMorning   = (next) => { setMorningHabits(next); debouncedSave({ morningHabits: next }); };
-  const saveEvening   = (next) => { setEveningHabits(next); debouncedSave({ eveningHabits: next }); };
-  const saveNight     = (next) => { setNightHabits(next);   debouncedSave({ nightHabits: next });   };
-  const saveHabitData = (next) => { setHabitData(next);     debouncedSave({ habitData: next });     };
-  const saveTodos     = (next) => { setTodos(next);         debouncedSave({ todos: next });         };
-  const savePriorities= (next) => { setPriorities(next);    debouncedSave({ priorities: next });    };
+  const saveMorning    = (next) => { setMorningHabits(next); debouncedSave({ morningHabits: next }); };
+  const saveEvening    = (next) => { setEveningHabits(next); debouncedSave({ eveningHabits: next }); };
+  const saveNight      = (next) => { setNightHabits(next);   debouncedSave({ nightHabits: next });   };
+  const saveHabitData  = (next) => { setHabitData(next);     debouncedSave({ habitData: next });     };
+  const saveTodos      = (next) => { setTodos(next);         debouncedSave({ todos: next });         };
+  const savePriorities = (next) => { setPriorities(next);    debouncedSave({ priorities: next });    };
 
-  // extra tab save — also updates docData so GenericTab re-renders correctly
   const saveExtra = useCallback((patch) => {
     setDocData((prev) => ({ ...prev, ...patch }));
     debouncedSave(patch);
   }, [debouncedSave]);
 
-  // ── Core habit actions (read from refs) ───────────────────────────────────
+  // ── Core habit actions ────────────────────────────────────────────────────
   const toggleHabit = (day, habit) => {
     const next = { ...habitDataRef.current, [day]: { ...habitDataRef.current[day], [habit]: !habitDataRef.current[day]?.[habit] } };
     saveHabitData(next);
@@ -455,16 +641,6 @@ export default function SecondBrain() {
     else if (group === "evening") { const next = [...eveningRef.current, n]; eveningRef.current = next; setEveningHabits(next); debouncedSave({ habitData: nd, eveningHabits: next }); }
     else { const next = [...nightRef.current, n]; nightRef.current = next; setNightHabits(next); debouncedSave({ habitData: nd, nightHabits: next }); }
   };
-
-
-
-
-
-
-
-
-
-
 
   const deleteHabit = (group, habit) => {
     if (group === "morning") saveMorning(morningRef.current.filter((x) => x !== habit));
@@ -547,8 +723,8 @@ export default function SecondBrain() {
 
       <div className="nav-scroll" style={{ display: "flex", gap: 4, padding: "10px 16px", borderBottom: "1px solid #1a1a1a", background: "#0d0d0d", overflowX: "auto" }}>
         {NAV.map((n) => {
-          const extra = EXTRA_TABS.find((e) => e.tabKey === n.id);
-          const ac = extra ? extra.accent : "#22c55e";
+          const extra  = EXTRA_TABS.find((e) => e.tabKey === n.id);
+          const ac     = extra ? extra.accent : "#22c55e";
           const active = tab === n.id;
           return (<button key={n.id} onClick={() => setTab(n.id)} style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid", borderColor: active ? ac : "#1f1f1f", background: active ? `${ac}18` : "transparent", color: active ? ac : "#6b7280", fontSize: 12, cursor: "pointer", fontFamily: "'Space Mono',monospace", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>{n.icon} {n.label}</button>);
         })}
@@ -556,7 +732,7 @@ export default function SecondBrain() {
 
       <div style={{ flex: 1, padding: "16px 24px", width: "100%", paddingBottom: 32 }}>
 
-        {/* ── EXTRA TABS ── */}
+        {/* ── EXTRA TABS (Workout / Skincare / Diet) ── */}
         {activeExtra && (
           <GenericTab key={activeExtra.tabKey} tabKey={activeExtra.tabKey} accent={activeExtra.accent} label={activeExtra.label} emoji={activeExtra.emoji} days={days} today={today} docData={docData} onSave={saveExtra} />
         )}
